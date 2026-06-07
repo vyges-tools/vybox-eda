@@ -1,0 +1,64 @@
+# vybox-eda — tools manifest (the curated subset we ship + versions).
+#
+# The subset of tools shipped in vybox-eda, with versions. Versions follow the
+# pinned iic-osic-tools image (IIC_OSIC_TOOLS_TAG); the values below are a
+# snapshot read from its tool_metadata.yml on `main` (2026-06-07) — re-read them
+# at the pinned release tag.
+#
+# Grouped by how the version is sourced:
+#   compiled  built C/C++ tools  -> iic tool_metadata.yml ; COPY from /foss/tools
+#   python    pip-installed      -> pip-pinned (confirm with pip show)
+#   pdk       open_pdks SHA + ciel-installed PDK families
+#
+# Upstream: https://github.com/iic-jku/IIC-OSIC-TOOLS (see NOTICE).
+
+iic_osic_tools_tag: ">=2025.01"     # Ubuntu 24.04 base
+python: "3.12"                      # Ubuntu 24.04 system python3. COPYd KLayout/
+                                    # OpenROAD modules are cpython-3.12 ABI and pip
+                                    # tools install against it; do not install
+                                    # another interpreter.
+
+# ── Compiled EDA tools — COPY from pinned iic /foss/tools ────────────────────
+compiled:
+  yosys:               v0.65          # synthesis; bundles abc, eqy v0.65, sby v0.65
+  slang-yosys-plugin:  cf20b1ba0d2c9df0508f927930a87565e7e0d220   # SystemVerilog synth
+  ghdl-yosys-plugin:   ade128c9220fe2763b0b3dfab06cf4b317de776d   # VHDL synth
+  verilator:           v5.048         # RTL sim / lint
+  openroad:            08f67ee5ecd14db5a42be8c610bbfd1ccf079299   # RTL2GDS engine; vendors OpenSTA
+  klayout:             v0.30.8        # layout / DRC / GDS
+  magic:               "8.3.642"      # layout / DRC / PEX
+  netgen:              "1.5.319"      # LVS
+  ngspice:             ngspice-46     # SPICE
+  verible:             v0.0-4053-g89d4d98a   # SV lint / format
+  slang:               861ec67f4a4da438a4322beb0c48cc5b4590bc26   # SV parser
+  surelog:             v1.86          # SV parser / elaborator
+  sv2v:                6662fa5da71f87797598060f17728b284b99a9fc   # SV -> Verilog
+  ghdl:                e7d46d7c1697f595b31562e8a943c9ed95c278f1   # VHDL sim
+  riscv-gnu-toolchain: "2026.05.06"   # firmware builds
+  spike:               c567a199a7dbd9c0f5689e0567415c76d9a21ade   # RISC-V ISA sim
+  # OpenSTA: no standalone entry — vendored in OpenROAD (above), pinned by its commit.
+
+# ── Python flow tools — pip install at pinned versions (confirm via pip show) ─
+python:
+  librelane: TBD    # RTL2GDS flow scripts
+  cocotb:    TBD    # cocotb testbenches
+  ciel:      TBD    # open-PDK version manager / builder
+  openram:   TBD    # OpenRAM SRAM macro generation (optional)
+
+# ── PDKs — via ciel / open_pdks ──────────────────────────────────────────────
+pdk:
+  open_pdks: 7b70722e33c03fcb5dabcf4d479fb0822d9251c9   # SHA gates DRC/LVS decks
+  sky130:    via-ciel    # SkyWater 130nm (sky130A); version tied to open_pdks SHA
+  gf180mcu:  via-ciel    # GlobalFoundries 180nm
+
+# ── Not shipped in vybox-eda ─────────────────────────────────────────────────
+# Excludes the analog/schematic/EM suite, alt-HDLs/build-systems, and iVerilog.
+excluded:
+  schematic_analog_em: [xschem, xcircuit, gaw3-xschem, schemdraw, cace, charlib,
+    lctime, pygmid, pyopus, gmsh, palace, openems, fasthenry2, fastercap,
+    scikit-rf, qucs-s, xyce, nvc, vacask, openvaf-reloaded]
+  layout_python_misc: [gds3d, gdsfactory, gdsfill, gdspy, klayout-pex, padring]
+  alt_hdl_buildsys: [amaranth, hdl21, pyrtl, veryl, vlsirtools, siliconcompiler,
+    fusesoc, edalize]
+  other: [iverilog, irsim, covered, cvc, qflow, kactus2, libman, najaeda, rggen,
+    fault, kepler-formal, surfer, gtkwave, pyuvm, pyverilog]

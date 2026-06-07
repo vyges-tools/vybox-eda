@@ -1,0 +1,30 @@
+vybox-eda
+Copyright (c) Vyges.
+
+This repository (Dockerfile, scripts, configuration) is licensed under the
+Apache License, Version 2.0.
+
+The EDA tool binaries are sourced from the iic-osic-tools project
+(https://github.com/iic-jku/IIC-OSIC-TOOLS, Apache-2.0).
+
+The container images built from it aggregate third-party tools, each distributed
+under its own upstream license. Aggregation in a container image does not change
+those licenses. Notable components and their licenses:
+
+  Yosys          — ISC
+  Verilator      — LGPL-3.0 / Artistic-2.0
+  OpenROAD       — BSD-3-Clause
+  KLayout        — GPL-3.0
+  Magic          — public domain / custom (see upstream)
+  Netgen         — GPL-2.0 (see upstream)
+  ngspice        — BSD-3-Clause / custom
+  open_pdks / sky130A / gf180mcu — Apache-2.0 (PDK contents per foundry terms)
+  KiCad          — GPL-3.0           (full target only)
+  FreeCAD        — LGPL-2.1          (full target only)
+  OpenSCAD       — GPL-2.0/-3.0      (full target only)
+
+The Vyges CLI (`vyges`, `vyges-pdk-store`, `vyges-catalog`) is proprietary,
+distributed as a binary; the Vyges EDA engines (`vyges-char`, `vyges-sta-si`,
+`vyges-extract`, `vyges-em-ir`) are Apache-2.0.
+
+Consult each upstream project for the authoritative license text and source.
