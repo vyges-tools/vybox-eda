@@ -14,12 +14,12 @@ on:
       target:
         description: "Build target"
         type: choice
-        default: rtl2gds
+        default: rtl2gds-base
         options: [rtl2gds-base, rtl2gds, full]
       push:
         description: "Push to registries (else build-only)"
         type: boolean
-        default: false
+        default: true
 
 permissions:
   contents: read
@@ -35,8 +35,21 @@ env:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 350          # from-scratch build (OpenROAD source) is the long pole
     steps:
       - uses: actions/checkout@v6
+
+      # The from-scratch build (source-built tools + PDKs) needs more disk than a
+      # hosted runner has by default. Reclaim ~30 GB of preinstalled tooling.
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          swap-storage: true
 
       - name: Load version pins
         id: pins
