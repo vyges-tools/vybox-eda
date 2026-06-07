@@ -2,53 +2,153 @@
 # ============================================================================
 # vybox-eda — a container for building RTL -> GDSII.
 #
-# Slim, headless, x86_64 open-EDA toolchain (no desktop/VNC). EDA tool binaries
-# come from a pinned iic-osic-tools image (see NOTICE) and are COPYd into a clean
-# Ubuntu runtime; the desktop/VNC layers are not shipped.
+# Built FROM SCRATCH on Ubuntu 24.04 — no large base image. Each EDA tool is
+# installed from its own pinned upstream (source build or official package) into
+# a slim, headless runtime. This keeps the image small, version-controlled, and
+# buildable on a standard CI runner (the cost is build time, not a multi-GB pull).
 #
 # Build targets (docker build --target <t>):
 #   rtl2gds-base  EDA tools + PDKs only (no Vyges binaries)
 #   rtl2gds       (default) rtl2gds-base + the Vyges CLI and EDA engines
 #   full          rtl2gds + board / mechanical CAD (KiCad, FreeCAD, OpenSCAD)
 #
-# Versions: see versions.lock and tools.yml. "VALIDATE" comments mark paths and
-# library closures to confirm on the first build.
+# Versions are macros (ARG block below; mirrored in versions.lock). "VALIDATE"
+# comments mark build flags / refs / runtime-lib closures to confirm on the
+# first build. The previous iic-osic-tools-based approach is kept as Dockerfile.orig.
 # ============================================================================
 
 # ── Version pins ────────────────────────────────────────────────────────────
 ARG UBUNTU_VERSION=24.04
-# Python = Ubuntu 24.04's system python3 (3.12). The KLayout/OpenROAD python
-# modules COPYd from the base image are cpython-3.12 ABI and the pip tools install
-# against it, so do not install a different interpreter.
+# Python = Ubuntu 24.04 system python3 (3.12). Do not install another interpreter.
 ARG PYTHON_VERSION=3.12
-# The EDA tool set. Pin to a real DATED tag — never "latest".
-ARG IIC_OSIC_TOOLS_TAG=2026.05
+# EDA tools (see tools.yml; versions tracked vs the matrix internally).
+ARG YOSYS_REF=v0.65
+ARG VERILATOR_REF=v5.048
+ARG OPENROAD_REF=08f67ee5ecd14db5a42be8c610bbfd1ccf079299
+ARG KLAYOUT_VERSION=0.30.8
+ARG MAGIC_REF=8.3.642
+ARG NETGEN_REF=1.5.319
+ARG NGSPICE_VERSION=46
+ARG OPEN_PDKS_REF=7b70722e33c03fcb5dabcf4d479fb0822d9251c9
 ARG RUST_VERSION=1.83
 # superset (full) only
 ARG KICAD_VERSION=8.0
 ARG FREECAD_VERSION=1.0
 ARG OPENSCAD_VERSION=2021.01
+# Common install prefix every source-built tool uses (one COPY into the runtime).
+ARG EDA_PREFIX=/opt/eda
 
 # ============================================================================
-# toolsrc — pinned iic-osic-tools image, used as the source of the prebuilt EDA
-# tool binaries. Only the /foss tool tree is COPYd into the final image (below);
-# the desktop/VNC/X layers are not.
+# build-deps — shared apt layer for the source builds (cached once).
 # ============================================================================
-FROM hpretl/iic-osic-tools:${IIC_OSIC_TOOLS_TAG} AS toolsrc
-
-# ============================================================================
-# runtime-base — slim, headless Ubuntu with only the RUNTIME shared libs the
-# /foss tools link against (no -dev, no source toolchain except g++/make, which
-# Verilator needs to compile generated models). VALIDATE this set with
-# `ldd /foss/tools/*/bin/*` on the pinned image; a missing lib shows up as
-# "error while loading shared libraries".
-# ============================================================================
-FROM ubuntu:${UBUNTU_VERSION} AS runtime-base
-ARG PYTHON_VERSION
+FROM mcr.microsoft.com/devcontainers/base:ubuntu-${UBUNTU_VERSION} AS build-deps
+USER root
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      curl ca-certificates git python3 python3-pip perl tcsh \
-      g++ make \
+      build-essential clang lld cmake ninja-build git curl ca-certificates \
+      pkg-config autoconf automake libtool m4 bison flex gawk tcsh \
+      python3 python3-dev python3-pip \
+      libreadline-dev zlib1g-dev libffi-dev \
+      tcl-dev tk-dev \
+      libx11-dev libxaw7-dev libcairo2-dev libncurses-dev \
+      libboost-system-dev libboost-python-dev libboost-filesystem-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# ── Yosys (synthesis) — bundles ABC via --recursive ─────────────────────────
+FROM build-deps AS yosys
+ARG YOSYS_REF
+ARG EDA_PREFIX
+RUN git clone --depth 1 --branch "${YOSYS_REF}" --recursive \
+      https://github.com/YosysHQ/yosys.git /tmp/yosys \
+ && make -C /tmp/yosys -j"$(nproc)" PREFIX="${EDA_PREFIX}" \
+ && make -C /tmp/yosys install PREFIX="${EDA_PREFIX}" \
+ && rm -rf /tmp/yosys
+
+# ── Verilator (RTL sim / lint) ──────────────────────────────────────────────
+FROM build-deps AS verilator
+ARG VERILATOR_REF
+ARG EDA_PREFIX
+RUN apt-get update && apt-get install -y --no-install-recommends help2man perl libfl-dev \
+ && rm -rf /var/lib/apt/lists/* \
+ && git clone --depth 1 --branch "${VERILATOR_REF}" \
+      https://github.com/verilator/verilator.git /tmp/verilator \
+ && cd /tmp/verilator && autoconf && ./configure --prefix="${EDA_PREFIX}" \
+ && make -j"$(nproc)" && make install && rm -rf /tmp/verilator
+
+# ── Magic (layout / DRC / extraction) ───────────────────────────────────────
+FROM build-deps AS magic
+ARG MAGIC_REF
+ARG EDA_PREFIX
+RUN apt-get update && apt-get install -y --no-install-recommends mesa-common-dev libglu1-mesa-dev \
+ && rm -rf /var/lib/apt/lists/* \
+ && git clone https://github.com/RTimothyEdwards/magic.git /tmp/magic \
+ && cd /tmp/magic && git checkout "${MAGIC_REF}" \
+ && ./configure --prefix="${EDA_PREFIX}" && make -j"$(nproc)" && make install \
+ && rm -rf /tmp/magic
+
+# ── Netgen (LVS) ────────────────────────────────────────────────────────────
+FROM build-deps AS netgen
+ARG NETGEN_REF
+ARG EDA_PREFIX
+RUN git clone https://github.com/RTimothyEdwards/netgen.git /tmp/netgen \
+ && cd /tmp/netgen && git checkout "${NETGEN_REF}" \
+ && ./configure --prefix="${EDA_PREFIX}" && make -j"$(nproc)" && make install \
+ && rm -rf /tmp/netgen
+
+# ── ngspice (SPICE) ─────────────────────────────────────────────────────────
+FROM build-deps AS ngspice
+ARG NGSPICE_VERSION
+ARG EDA_PREFIX
+RUN curl -fsSL "https://downloads.sourceforge.net/project/ngspice/ng-spice-rework/${NGSPICE_VERSION}/ngspice-${NGSPICE_VERSION}.tar.gz" -o /tmp/ngspice.tgz \
+ && tar -xzf /tmp/ngspice.tgz -C /tmp \
+ && cd "/tmp/ngspice-${NGSPICE_VERSION}" \
+ && ./configure --prefix="${EDA_PREFIX}" --disable-debug --with-readline=yes --enable-openmp \
+ && make -j"$(nproc)" && make install && rm -rf /tmp/ngspice*
+
+# ── OpenROAD (floorplan/place/CTS/route/signoff) — the long pole. VALIDATE. ──
+# Full source build (~30-60 min). DependencyInstaller pulls its own dep set.
+FROM build-deps AS openroad
+ARG OPENROAD_REF
+ARG EDA_PREFIX
+RUN git clone --recursive https://github.com/The-OpenROAD-Project/OpenROAD.git /tmp/openroad \
+ && cd /tmp/openroad && git checkout "${OPENROAD_REF}" && git submodule update --init --recursive \
+ && ./etc/DependencyInstaller.sh -base -common \
+ && cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="${EDA_PREFIX}" \
+ && cmake --build build -j"$(nproc)" --target install \
+ && rm -rf /tmp/openroad
+
+# ── Vyges binaries (Rust) — CLI suite + EDA engines (same Ubuntu = glibc match) ─
+# Source from the build context (./src/...); skip for rtl2gds-base.
+FROM mcr.microsoft.com/devcontainers/base:ubuntu-${UBUNTU_VERSION} AS vyges-bins
+USER root
+ARG RUST_VERSION
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      build-essential curl ca-certificates pkg-config libssl-dev git \
+ && rm -rf /var/lib/apt/lists/* \
+ && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+      | sh -s -- -y --default-toolchain "${RUST_VERSION}" --profile minimal
+ENV PATH=/root/.cargo/bin:${PATH}
+WORKDIR /src
+RUN mkdir -p /out/bin
+# COPY ./src ./        # <- uncomment once the build context carries the sources
+# VALIDATE: cargo build --release each crate; cp binaries into /out/bin.
+
+# ============================================================================
+# runtime-base — slim, headless Ubuntu with only the runtime shared libs the
+# built tools link (no -dev; g++/make kept for Verilator's generated models).
+# VALIDATE the lib set with `ldd ${EDA_PREFIX}/bin/*` on the first build.
+# ============================================================================
+FROM mcr.microsoft.com/devcontainers/base:ubuntu-${UBUNTU_VERSION} AS runtime-base
+USER root
+ARG PYTHON_VERSION
+ARG KLAYOUT_VERSION
+ENV DEBIAN_FRONTEND=noninteractive \
+    EDA_PREFIX=/opt/eda \
+    PDK_ROOT=/opt/pdks \
+    PDK=sky130A
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      curl ca-certificates git python3 python3-pip perl tcsh g++ make \
       tcl tk libtcl8.6 libtk8.6 \
       libreadline8t64 zlib1g libffi8 libgomp1 \
       libx11-6 libxaw7 libxext6 libxrender1 libsm6 libice6 libcairo2 libncurses6 \
@@ -56,10 +156,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       libboost-system1.83.0 libboost-filesystem1.83.0 \
       libboost-python1.83.0 libboost-program-options1.83.0 \
  && rm -rf /var/lib/apt/lists/*
-# Fail fast if the base ever drifts off the expected interpreter — the COPYd
-# KLayout/OpenROAD python modules are built for exactly this cpython ABI.
+# Pin the interpreter (cpython-3.12 ABI for any python tool modules).
 RUN python3 --version | grep -q "Python ${PYTHON_VERSION}" \
  || { echo "ERROR: expected Python ${PYTHON_VERSION}, got: $(python3 --version)"; exit 1; }
+# KLayout from the official Ubuntu-24 .deb (pinned; pulls its Qt runtime deps).
+RUN curl -fsSL "https://www.klayout.org/downloads/Ubuntu-24/klayout_${KLAYOUT_VERSION}-1_amd64.deb" -o /tmp/klayout.deb \
+ && apt-get update && apt-get install -y --no-install-recommends /tmp/klayout.deb \
+ && rm -f /tmp/klayout.deb && rm -rf /var/lib/apt/lists/*
 
 # Image metadata (inherited by all targets built FROM runtime-base).
 LABEL maintainer="Shivaram Mysore <shivaram.mysore@gmail.com>" \
@@ -73,64 +176,30 @@ LABEL maintainer="Shivaram Mysore <shivaram.mysore@gmail.com>" \
       BUG_REPORT="https://vyges.com/contact" \
       FEATURE_REQUEST="https://vyges.com/contact"
 
-# Tools run headless as root by default (simplest for CI and bind-mounted
-# volumes; the open-EDA CLIs — yosys/openroad/klayout-batch/magic/netgen/ngspice
-# — run fine as root). iic-osic-tools' non-root user exists only for its VNC
-# desktop, which we don't ship. To match host file ownership on a mount, run with
-# `--user "$(id -u):$(id -g)"`.
+# Tools run headless as root (CLIs run fine as root; use --user "$(id -u):$(id -g)"
+# to match host ownership on a bind-mount).
 
 # ============================================================================
-# rtl2gds-base — COPY the EDA tools from toolsrc; add PDKs.
+# rtl2gds-base — gather the built tools + PDKs. The EDA-only image.
 # ============================================================================
 FROM runtime-base AS rtl2gds-base
-# iic-osic-tools installs its tools under /foss (tools at /foss/tools/<t>,
-# PDKs at /foss/pdks). COPY what we ship (see tools.yml); trim unused tools
-# (xschem, gaw, xcircuit, …). VALIDATE the exact paths against the pinned image.
-COPY --from=toolsrc /foss /foss
-ENV PDK_ROOT=/foss/pdks \
-    PDK=sky130A
-# Put every tool binary on PATH. VALIDATE iic's actual layout (/foss/tools/<t>/bin);
-# their setup also exports env in a profile we may need to mirror.
-RUN set -eux; \
-    for b in /foss/tools/*/bin; do \
-      [ -d "$b" ] && find "$b" -maxdepth 1 -type f -perm -u+x \
-        -exec ln -sf {} /usr/local/bin/ \; ; \
-    done; \
-    # iVerilog is not shipped — drop it if present.
-    rm -f /usr/local/bin/iverilog /usr/local/bin/vvp 2>/dev/null || true
-ENV PATH=/usr/local/bin:/root/.vyges/bin:/usr/bin:/bin
+ARG OPEN_PDKS_REF
+COPY --from=yosys     /opt/eda /opt/eda
+COPY --from=verilator /opt/eda /opt/eda
+COPY --from=magic     /opt/eda /opt/eda
+COPY --from=netgen    /opt/eda /opt/eda
+COPY --from=ngspice   /opt/eda /opt/eda
+COPY --from=openroad  /opt/eda /opt/eda
+ENV PATH=/opt/eda/bin:/root/.vyges/bin:/usr/bin:/bin
+# Open PDKs (sky130A + gf180mcu) via ciel, pinned to an open_pdks SHA. VALIDATE.
+RUN pip3 install --no-cache-dir --break-system-packages ciel \
+ && mkdir -p "${PDK_ROOT}" \
+ && ciel enable --pdk-root "${PDK_ROOT}" --pdk-family sky130   "${OPEN_PDKS_REF}" \
+ && ciel enable --pdk-root "${PDK_ROOT}" --pdk-family gf180mcu "${OPEN_PDKS_REF}"
 WORKDIR /work
 COPY scripts/smoke-test.sh /usr/local/bin/vybox-eda-smoke
 RUN chmod +x /usr/local/bin/vybox-eda-smoke
 CMD ["vybox-eda-smoke"]
-
-# ============================================================================
-# vyges-bins (Rust) — the CLI suite + EDA engines, built on the SAME Ubuntu as
-# the runtime so glibc matches. Source comes from the build context (clone the
-# repos next to this one first); private repos stay out of the image history.
-#   expected build-context layout:
-#     ./src/vyges-cli         (vyges, vyges-pdk-store, vyges-catalog)
-#     ./src/engines/char|extract|sta-si|em-ir
-# For an EDA-only image, build --target rtl2gds-base.
-# ============================================================================
-FROM ubuntu:${UBUNTU_VERSION} AS vyges-bins
-ARG RUST_VERSION
-ENV DEBIAN_FRONTEND=noninteractive
-RUN apt-get update && apt-get install -y --no-install-recommends \
-      build-essential curl ca-certificates pkg-config libssl-dev git \
- && rm -rf /var/lib/apt/lists/* \
- && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
-      | sh -s -- -y --default-toolchain "${RUST_VERSION}" --profile minimal
-ENV PATH=/root/.cargo/bin:${PATH}
-WORKDIR /src
-RUN mkdir -p /out/bin
-# COPY ./src ./        # <- uncomment once the build context carries the sources
-# VALIDATE: build each crate and stage its binaries into /out/bin, e.g.
-#   cargo build --release --manifest-path vyges-cli/Cargo.toml \
-#     && cp vyges-cli/target/release/{vyges,vyges-pdk-store,vyges-catalog} /out/bin/
-#   for e in char extract sta-si em-ir; do \
-#     cargo build --release --manifest-path engines/$e/Cargo.toml \
-#       && cp engines/$e/target/release/vyges-$e /out/bin/; done
 
 # ============================================================================
 # rtl2gds — the published image: EDA toolchain + Vyges CLI + EDA engines.
@@ -145,11 +214,6 @@ LABEL org.opencontainers.image.title="vybox-eda" \
 # full — rtl2gds plus board / mechanical CAD (headless).
 # ============================================================================
 FROM rtl2gds AS full
-ARG KICAD_VERSION
-ARG OPENSCAD_VERSION
 RUN apt-get update && apt-get install -y --no-install-recommends \
       kicad openscad freecad \
  && rm -rf /var/lib/apt/lists/*
-# VALIDATE: pin KiCad via the kicad/kicad-${KICAD_VERSION}-releases PPA and
-# FreeCAD/OpenSCAD versions if exact pins are required; headless entry points
-# are kicad-cli, freecadcmd, openscad.

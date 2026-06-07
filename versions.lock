@@ -1,22 +1,22 @@
 # vybox-eda — pinned versions (single source for scripts/build.sh).
 #
-# Format: KEY=VALUE, one per line. build.sh reads these and passes them as
-# --build-arg overrides of the Dockerfile ARG defaults, so a clean rebuild is
-# reproducible. Mirror any change into the Dockerfile ARG block too.
-#
-# EDA tool versions follow IIC_OSIC_TOOLS_TAG (one pinned image), not per-tool
-# pins here. Bump the tag to move the tool set; see tools.yml for what's included.
+# build.sh passes each KEY=VALUE as a --build-arg. The image is built FROM SCRATCH
+# on Ubuntu 24.04; the EDA tool versions below match the iic-osic-tools 2026.05
+# co-tested set (the matrix reference — see tools.yml) but are built from their
+# own pinned upstreams here. Bump one entry per commit.
 
-# Base OS — explicit, never "latest" (debuggability).
 UBUNTU_VERSION=24.04
-
-# Python = Ubuntu 24.04 system python3 (iic uses the same; no override). The
-# COPYd KLayout/OpenROAD python modules are cpython-3.12 ABI; never install another.
 PYTHON_VERSION=3.12
 
-# The EDA tool set (Yosys, OpenROAD, KLayout, Magic, Netgen, ngspice, Verilator,
-# + sky130A/gf180 PDKs). Pin to a real DATED iic-osic-tools tag.
-IIC_OSIC_TOOLS_TAG=2026.05
+# EDA tools — iic-osic-tools 2026.05-aligned pins (verified git tags / commits)
+YOSYS_REF=v0.65
+VERILATOR_REF=v5.048
+OPENROAD_REF=08f67ee5ecd14db5a42be8c610bbfd1ccf079299
+KLAYOUT_VERSION=0.30.8
+MAGIC_REF=8.3.642
+NETGEN_REF=1.5.319
+NGSPICE_VERSION=46
+OPEN_PDKS_REF=7b70722e33c03fcb5dabcf4d479fb0822d9251c9
 
 # Vyges binaries build toolchain
 RUST_VERSION=1.83
