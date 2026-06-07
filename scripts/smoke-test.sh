@@ -44,7 +44,7 @@ check openscad   openscad --version
 echo
 echo "PDKs:"
 for p in sky130A gf180mcuA gf180mcuB gf180mcuC gf180mcuD; do
-  if [ -d "${PDK_ROOT:-/opt/pdks}/$p" ]; then echo "  $p  present"; else echo "  $p  -"; fi
+  if [ -d "${PDK_ROOT:-/opt/vyges/pdks}/$p" ]; then echo "  $p  present"; else echo "  $p  -"; fi
 done
 
 echo

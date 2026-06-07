@@ -36,7 +36,7 @@ ARG KICAD_VERSION=8.0
 ARG FREECAD_VERSION=1.0
 ARG OPENSCAD_VERSION=2021.01
 # Common install prefix every source-built tool uses (one COPY into the runtime).
-ARG EDA_PREFIX=/opt/eda
+ARG EDA_PREFIX=/opt/vyges/eda
 
 # ============================================================================
 # build-deps — shared apt layer for the source builds (cached once).
@@ -144,8 +144,8 @@ USER root
 ARG PYTHON_VERSION
 ARG KLAYOUT_VERSION
 ENV DEBIAN_FRONTEND=noninteractive \
-    EDA_PREFIX=/opt/eda \
-    PDK_ROOT=/opt/pdks \
+    EDA_PREFIX=/opt/vyges/eda \
+    PDK_ROOT=/opt/vyges/pdks \
     PDK=sky130A
 RUN apt-get update && apt-get install -y --no-install-recommends \
       curl ca-certificates git python3 python3-pip perl tcsh g++ make \
@@ -184,13 +184,13 @@ LABEL maintainer="Shivaram Mysore <shivaram.mysore@gmail.com>" \
 # ============================================================================
 FROM runtime-base AS rtl2gds-base
 ARG OPEN_PDKS_REF
-COPY --from=yosys     /opt/eda /opt/eda
-COPY --from=verilator /opt/eda /opt/eda
-COPY --from=magic     /opt/eda /opt/eda
-COPY --from=netgen    /opt/eda /opt/eda
-COPY --from=ngspice   /opt/eda /opt/eda
-COPY --from=openroad  /opt/eda /opt/eda
-ENV PATH=/opt/eda/bin:/root/.vyges/bin:/usr/bin:/bin
+COPY --from=yosys     /opt/vyges/eda /opt/vyges/eda
+COPY --from=verilator /opt/vyges/eda /opt/vyges/eda
+COPY --from=magic     /opt/vyges/eda /opt/vyges/eda
+COPY --from=netgen    /opt/vyges/eda /opt/vyges/eda
+COPY --from=ngspice   /opt/vyges/eda /opt/vyges/eda
+COPY --from=openroad  /opt/vyges/eda /opt/vyges/eda
+ENV PATH=/opt/vyges/eda/bin:/opt/vyges/bin:/usr/bin:/bin
 # Open PDKs (sky130A + gf180mcu) via ciel, pinned to an open_pdks SHA. VALIDATE.
 RUN pip3 install --no-cache-dir --break-system-packages ciel \
  && mkdir -p "${PDK_ROOT}" \
@@ -205,7 +205,7 @@ CMD ["vybox-eda-smoke"]
 # rtl2gds — the published image: EDA toolchain + Vyges CLI + EDA engines.
 # ============================================================================
 FROM rtl2gds-base AS rtl2gds
-COPY --from=vyges-bins /out/bin /root/.vyges/bin
+COPY --from=vyges-bins /out/bin /opt/vyges/bin
 LABEL org.opencontainers.image.title="vybox-eda" \
       org.opencontainers.image.source="https://github.com/vyges-tools/vybox-eda" \
       org.opencontainers.image.licenses="Apache-2.0"
