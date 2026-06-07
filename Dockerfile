@@ -46,7 +46,7 @@ USER root
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
       build-essential clang lld cmake ninja-build git curl ca-certificates \
-      pkg-config autoconf automake libtool m4 bison flex gawk tcsh \
+      pkg-config autoconf automake libtool m4 bison flex libfl-dev gawk tcsh \
       python3 python3-dev python3-pip \
       libreadline-dev zlib1g-dev libffi-dev \
       tcl-dev tk-dev \
