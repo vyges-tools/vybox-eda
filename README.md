@@ -61,13 +61,15 @@ layers in the Vyges binaries; `full` adds board/mechanical CAD.)
 
 ## Use
 
-The image is published to the **GitHub Container Registry (GHCR)**, free for public OSS:
+The image is published to the **GitHub Container Registry (GHCR)**, free for public OSS.
+Tags: `latest` · `0.1.0` (pinned) · `rtl2gds-base`.
 
 ```sh
-docker pull ghcr.io/vyges-tools/vybox-eda:rtl2gds-base
+docker pull ghcr.io/vyges-tools/vybox-eda            # latest (= rtl2gds-base)
+docker pull ghcr.io/vyges-tools/vybox-eda:0.1.0      # or pin a version
 
-docker run --rm ghcr.io/vyges-tools/vybox-eda:rtl2gds-base            # prints tool versions
-docker run --rm -v "$PWD:/work" ghcr.io/vyges-tools/vybox-eda:rtl2gds-base yosys -V
+docker run --rm ghcr.io/vyges-tools/vybox-eda            # prints tool versions
+docker run --rm -v "$PWD:/work" ghcr.io/vyges-tools/vybox-eda yosys -V
 ```
 
 (`podman` works identically — substitute `podman` for `docker`.)

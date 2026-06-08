@@ -18,6 +18,10 @@ on:
         description: "Push to registries (else build-only)"
         type: boolean
         default: true
+      version:
+        description: "Optional version tag to also publish (e.g. 0.1.0)"
+        type: string
+        default: ""
   # Manual-only today. When we later enable auto-builds on code changes, uncomment
   # the push trigger below — docs are already excluded so README/docs/ commits never
   # kick off the (multi-hour) build. Keep these paths-ignore globs in sync with
@@ -62,9 +66,18 @@ jobs:
             echo 'EOF'
           } >> "$GITHUB_OUTPUT"
 
-      - name: Compose image tag
+      - name: Compose image tags
         id: tags
-        run: echo "tags=ghcr.io/vyges-tools/vybox-eda:${{ inputs.target }}" >> "$GITHUB_OUTPUT"
+        run: |
+          {
+            echo 'tags<<EOF'
+            echo "ghcr.io/vyges-tools/vybox-eda:${{ inputs.target }}"
+            # rtl2gds-base is the primary published image → also tag it :latest
+            [ "${{ inputs.target }}" = "rtl2gds-base" ] && echo "ghcr.io/vyges-tools/vybox-eda:latest"
+            # optional explicit version (e.g. 0.1.0)
+            [ -n "${{ inputs.version }}" ] && echo "ghcr.io/vyges-tools/vybox-eda:${{ inputs.version }}"
+            echo EOF
+          } >> "$GITHUB_OUTPUT"
 
       - uses: docker/setup-buildx-action@v3
 
