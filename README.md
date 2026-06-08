@@ -3,10 +3,6 @@
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Build & Publish](https://github.com/vyges-tools/vybox-eda/actions/workflows/build-and-publish.yml/badge.svg)](https://github.com/vyges-tools/vybox-eda/actions/workflows/build-and-publish.yml)
 [![GHCR](https://img.shields.io/badge/GHCR-vybox--eda-2496ED?logo=github)](https://github.com/orgs/vyges-tools/packages/container/package/vybox-eda)
-[![Docker Hub](https://img.shields.io/docker/v/vyges/vybox-eda?logo=docker&label=Docker%20Hub&sort=date)](https://hub.docker.com/r/vyges/vybox-eda)
-[![Image size](https://img.shields.io/docker/image-size/vyges/vybox-eda/rtl2gds?logo=docker&label=image%20size)](https://hub.docker.com/r/vyges/vybox-eda)
-[![Docker pulls](https://img.shields.io/docker/pulls/vyges/vybox-eda?logo=docker)](https://hub.docker.com/r/vyges/vybox-eda)
-[![Quay.io](https://img.shields.io/badge/Quay.io-vybox--eda-EE0000?logo=redhat)](https://quay.io/repository/vyges-tools/vybox-eda)
 [![Platform](https://img.shields.io/badge/platform-linux%2Famd64-informational)](#)
 
 A container for building **RTL → GDSII**.
@@ -46,7 +42,9 @@ In both cases `vybox-eda` is the consistent, auditable engine in the middle — 
 
 ## What's in it
 
-The `rtl2gds` image bundles, at versions pinned in [`versions.lock`](versions.lock):
+The published **`rtl2gds-base`** image bundles the EDA toolchain + open PDKs, at
+versions pinned in [`versions.lock`](versions.lock). (The `rtl2gds` target additionally
+layers in the Vyges binaries; `full` adds board/mechanical CAD.)
 
 | Tool | Role |
 | --- | --- |
@@ -58,21 +56,18 @@ The `rtl2gds` image bundles, at versions pinned in [`versions.lock`](versions.lo
 | Netgen | LVS |
 | ngspice | SPICE |
 | open PDKs | sky130A, gf180mcu |
-| Vyges CLI suite | `vyges`, `vyges-pdk-store`, `vyges-catalog` |
-| Vyges EDA engines | `vyges-char`, `vyges-sta-si`, `vyges-extract`, `vyges-em-ir` |
+| Vyges CLI suite | `vyges`, `vyges-pdk-store`, `vyges-catalog` _(in `rtl2gds`)_ |
+| Vyges EDA engines | `vyges-char`, `vyges-sta-si`, `vyges-extract`, `vyges-em-ir` _(in `rtl2gds`)_ |
 
 ## Use
 
-The image is published to three registries (all free for public OSS) — pull from
-whichever you prefer:
+The image is published to the **GitHub Container Registry (GHCR)**, free for public OSS:
 
 ```sh
-docker pull ghcr.io/vyges-tools/vybox-eda:rtl2gds     # GitHub Container Registry
-docker pull quay.io/vyges-tools/vybox-eda:rtl2gds     # Quay.io
-docker pull vyges/vybox-eda:rtl2gds                   # Docker Hub
+docker pull ghcr.io/vyges-tools/vybox-eda:rtl2gds-base
 
-docker run --rm ghcr.io/vyges-tools/vybox-eda:rtl2gds            # prints tool versions
-docker run --rm -v "$PWD:/work" ghcr.io/vyges-tools/vybox-eda:rtl2gds yosys -V
+docker run --rm ghcr.io/vyges-tools/vybox-eda:rtl2gds-base            # prints tool versions
+docker run --rm -v "$PWD:/work" ghcr.io/vyges-tools/vybox-eda:rtl2gds-base yosys -V
 ```
 
 (`podman` works identically — substitute `podman` for `docker`.)
@@ -80,7 +75,7 @@ docker run --rm -v "$PWD:/work" ghcr.io/vyges-tools/vybox-eda:rtl2gds yosys -V
 ## Running tools
 
 Tools run **headless as root** by default — bind-mount your working directory to
-`/work` and invoke the tool. Examples (set `IMG=ghcr.io/vyges-tools/vybox-eda:rtl2gds`):
+`/work` and invoke the tool. Examples (set `IMG=ghcr.io/vyges-tools/vybox-eda:rtl2gds-base`):
 
 ```sh
 # Batch / scripted — no display needed
@@ -114,9 +109,9 @@ pass `-e DISPLAY=host.docker.internal:0`.
 ## Build
 
 ```sh
-scripts/build.sh rtl2gds-base      # EDA toolchain + PDKs only
-scripts/build.sh rtl2gds           # + the Vyges binaries (default)
-docker run --rm ghcr.io/vyges-tools/vybox-eda:rtl2gds   # smoke test
+scripts/build.sh rtl2gds-base      # EDA toolchain + PDKs (what's published today)
+scripts/build.sh rtl2gds           # + the Vyges binaries
+docker run --rm ghcr.io/vyges-tools/vybox-eda:rtl2gds-base   # smoke test
 ```
 
 Versions are macros: edit [`versions.lock`](versions.lock) (and the matching
