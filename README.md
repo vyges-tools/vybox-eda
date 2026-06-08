@@ -94,6 +94,15 @@ Versions are macros: edit [`versions.lock`](versions.lock) (and the matching
 `ARG` block at the top of the [`Dockerfile`](Dockerfile)) and rebuild — the build
 logic never changes. The image builds on `linux/amd64`.
 
+## Documentation
+
+- **[Building VyBox‑EDA — and an open call to the OSS EDA community](docs/building-and-an-open-call.md)**
+  — why a *slim* RTL→GDSII container was harder to build than it should be, the
+  blow‑by‑blow of the OpenROAD dependency archaeology (with root causes), the
+  recurring friction in building outside the OpenLane 2 / LibreLane happy path, and a
+  tiered set of concrete CTAs for the tool projects to make this smoother for
+  everyone. Every fix it describes is in the [`Dockerfile`](Dockerfile), commented.
+
 ## License
 
 Apache-2.0 for this repository's build scripts and configuration. The bundled
