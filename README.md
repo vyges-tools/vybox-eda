@@ -15,6 +15,35 @@ A container for building **RTL → GDSII**.
 toolchain — no desktop, no VNC, no extras you don't need for a build. Built from
 scratch on a pinned Ubuntu so a clean rebuild is reproducible and easy to debug.
 
+## Why VyBox‑EDA
+
+Getting from RTL to a manufacturable **GDSII** normally means assembling a dozen
+open‑source tools at mutually‑compatible versions and wiring them together — the
+hard, undifferentiated work this image removes. `vybox-eda` is the **build engine**:
+a pinned, reproducible, headless toolchain you can drop into CI, a laptop, or a
+shuttle‑submission pipeline and get the same result every time. The inputs (your RTL,
+or a composed SoC) and the destination (an FPGA, a foundry shuttle, your own PDK)
+change; the build does not.
+
+## What you can build with it
+
+**Tape out a design to a foundry shuttle — e.g. [ChipFoundry](https://chipfoundry.io), sky130.**
+Run your RTL through synthesis (Yosys) → floorplan · place · route · signoff
+(OpenROAD) → DRC (Magic / KLayout) and LVS (Netgen) against the bundled **sky130A**
+PDK, and produce a DRC/LVS‑clean **GDSII** ready to submit to a ChipFoundry MPW
+shuttle. The whole flow runs headless in this one container — no per‑machine tool
+install, the same result on a laptop or in CI.
+
+**Compose a SoC from reusable IPs and harden it to GDSII.**
+This is the [Vyges](https://vyges.com) vision: pick verified, reusable IP blocks from
+**[VyCatalog](https://vyges.com/products/vycatalog)** — a RISC‑V core, UART, SPI,
+SRAM, an accelerator — string them into an SoC, then run the integrated design through
+the *same* RTL→GDSII flow in this container to get a tapeout‑ready layout. Reusable
+open silicon IP in, manufacturable GDSII out, on an open and fully‑pinned toolchain.
+
+In both cases `vybox-eda` is the consistent, auditable engine in the middle — see
+[the docs](docs/building-and-an-open-call.md) for how it's built and why that matters.
+
 ## What's in it
 
 The `rtl2gds` image bundles, at versions pinned in [`versions.lock`](versions.lock):

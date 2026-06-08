@@ -41,7 +41,7 @@ ARG EDA_PREFIX=/opt/vyges/eda
 # ============================================================================
 # build-deps — shared apt layer for the source builds (cached once).
 # ============================================================================
-FROM mcr.microsoft.com/devcontainers/base:ubuntu-${UBUNTU_VERSION} AS build-deps
+FROM ubuntu:${UBUNTU_VERSION} AS build-deps
 USER root
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -190,7 +190,7 @@ RUN grep -q Tcl_Size /usr/include/tcl/tcl.h \
 
 # ── Vyges binaries (Rust) — CLI suite + EDA engines (same Ubuntu = glibc match) ─
 # Source from the build context (./src/...); skip for rtl2gds-base.
-FROM mcr.microsoft.com/devcontainers/base:ubuntu-${UBUNTU_VERSION} AS vyges-bins
+FROM ubuntu:${UBUNTU_VERSION} AS vyges-bins
 USER root
 ARG RUST_VERSION
 ENV DEBIAN_FRONTEND=noninteractive
@@ -210,7 +210,7 @@ RUN mkdir -p /out/bin
 # built tools link (no -dev; g++/make kept for Verilator's generated models).
 # VALIDATE the lib set with `ldd ${EDA_PREFIX}/bin/*` on the first build.
 # ============================================================================
-FROM mcr.microsoft.com/devcontainers/base:ubuntu-${UBUNTU_VERSION} AS runtime-base
+FROM ubuntu:${UBUNTU_VERSION} AS runtime-base
 USER root
 ARG PYTHON_VERSION
 ARG KLAYOUT_VERSION

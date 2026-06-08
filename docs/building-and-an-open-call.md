@@ -23,6 +23,22 @@ turn a multi‑day archaeology dig into an afternoon.
 
 ## 1. How we built this and why it was needed
 
+### What it's for
+
+`vybox-eda` is the **RTL→GDSII build engine** in a larger picture. Two example
+journeys it enables:
+
+- **Foundry tapeout.** RTL → Yosys → OpenROAD → Magic/KLayout DRC + Netgen LVS → a
+  DRC/LVS‑clean GDSII you submit to a [ChipFoundry](https://chipfoundry.io) MPW
+  shuttle on the bundled sky130A PDK.
+- **SoC composition from VyCatalog.** Assemble a SoC from verified, reusable IP blocks
+  in [VyCatalog](https://vyges.com/products/vycatalog) — core, UART, SPI, SRAM,
+  accelerator — then harden the integrated design to GDSII with the *same* flow.
+
+The inputs and the destination vary; the build engine is constant, pinned, and
+auditable. The rest of this document is about making that engine *reliable to build* —
+and a call for the ecosystem to make it easier for everyone.
+
 ### The goal
 
 A **slim, headless, reproducible RTL→GDSII container** with:
