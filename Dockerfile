@@ -118,8 +118,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends libyaml-cpp-dev
  && cd /tmp/openroad && git checkout "${OPENROAD_REF}" && git submodule update --init --recursive \
  && ./etc/DependencyInstaller.sh -base -common
 # Configure + build + install (re-runs on tweaks; clone/deps stay cached).
+# Headless image: BUILD_GUI=OFF skips src/gui (no OpenGL/Qt). ENABLE_TESTS=OFF
+# skips the test suite (faster, fewer deps).
 RUN cd /tmp/openroad \
  && cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="${EDA_PREFIX}" \
+      -DBUILD_GUI=OFF -DENABLE_TESTS=OFF \
  && cmake --build build -j"$(nproc)" --target install \
  && rm -rf /tmp/openroad
 
