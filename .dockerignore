@@ -1,6 +1,10 @@
 .git
 .github
+# Docs never affect the image — keep them out of the build context so doc/md
+# commits don't perturb the build cache or context hash.
 *.md
+**/*.md
+docs/
 !README.md
 target/
 **/target/

@@ -1,4 +1,7 @@
-# Build + publish vybox-eda. Manual by design (heavy EDA build).
+# Build + publish vybox-eda. MANUAL by design (heavy from-scratch EDA build,
+# ~hours on a free 4-vCPU runner) — triggered only via workflow_dispatch, never
+# automatically on push/PR. Documentation changes (*.md, docs/) therefore can never
+# trigger a build; they are also excluded from the build context via .dockerignore.
 # Publishes the chosen target to every registry whose credentials are set:
 #   GHCR    ghcr.io/vyges-tools/vybox-eda   (always, via GITHUB_TOKEN)
 #   Docker Hub  docker.io/<DOCKERHUB_ORG>/vybox-eda   (if DOCKERHUB_* secrets set)
