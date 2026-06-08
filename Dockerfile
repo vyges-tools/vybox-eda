@@ -264,7 +264,7 @@ COPY --from=openroad  /opt/vyges/eda /opt/vyges/eda
 # OpenROAD dynamically links OR-Tools (libortools.so + abseil/protobuf/scip);
 # carry just the shared libs and put them on the loader path.
 COPY --from=openroad  /opt/or-tools/lib /opt/or-tools/lib
-ENV PATH=/opt/vyges/eda/bin:/opt/vyges/bin:/usr/bin:/bin \
+ENV PATH=/opt/vyges/eda/bin:/opt/vyges/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
     LD_LIBRARY_PATH=/opt/or-tools/lib:/usr/local/lib
 # Open PDKs (sky130A + gf180mcu) via ciel, pinned to an open_pdks SHA. VALIDATE.
 RUN pip3 install --no-cache-dir --break-system-packages ciel \
