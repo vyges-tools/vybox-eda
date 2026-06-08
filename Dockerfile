@@ -105,39 +105,43 @@ RUN curl -fsSL "https://downloads.sourceforge.net/project/ngspice/ng-spice-rewor
  && ./configure --prefix="${EDA_PREFIX}" --disable-debug --with-readline=yes --enable-openmp \
  && make -j"$(nproc)" && make install && rm -rf /tmp/ngspice*
 
-# ── OpenROAD (floorplan/place/CTS/route/signoff) — the long pole. VALIDATE. ──
-# Full source build (~30-60 min). DependencyInstaller pulls its own dep set.
+# ── OpenROAD — built the iic-osic-tools way (the long pole, ~45-90 min). ──────
+# We do NOT use OpenROAD's DependencyInstaller: it installs a prebuilt OR-Tools
+# that bundles *static* Boost 1.87 AND builds *shared* Boost 1.89 — they conflict
+# (the build wants shared 1.87, which exists nowhere). iic instead uses system
+# Boost (apt) + -DUSE_SYSTEM_BOOST=ON and lets OpenROAD build OR-Tools itself
+# against that one consistent Boost.
 FROM build-deps AS openroad
 ARG OPENROAD_REF
 ARG EDA_PREFIX
-# Clone + OpenROAD's own dep installer + deps it misses (libyaml-cpp-dev for
-# odb/3dblox). Separate layer so cmake/build tweaks below don't re-clone.
-RUN apt-get update && apt-get install -y --no-install-recommends libyaml-cpp-dev \
- && rm -rf /var/lib/apt/lists/* \
- && git clone --recursive https://github.com/The-OpenROAD-Project/OpenROAD.git /tmp/openroad \
- && cd /tmp/openroad && git checkout "${OPENROAD_REF}" && git submodule update --init --recursive \
- && ./etc/DependencyInstaller.sh -base -common
-# GUI build deps: OpenROAD configures src/gui unconditionally (needs OpenGL + Qt5).
-# DependencyInstaller's Qt list pins the removed `qt5-default`, so it no-ops on
-# Ubuntu 24.04 — install the current packages explicitly. Separate layer so it
-# doesn't bust the clone/deps cache above.
+# System deps (iic base-dev's OpenROAD-relevant apt set): full system Boost +
+# the libs OpenROAD/OR-Tools need.
 RUN apt-get update && apt-get install -y --no-install-recommends \
+      libboost-all-dev libeigen3-dev libre2-dev libfmt-dev libyaml-cpp-dev \
+      libomp-dev libtbb-dev libgmp-dev libspdlog-dev \
       libgl1-mesa-dev libglu1-mesa-dev \
-      qtbase5-dev qtbase5-dev-tools libqt5charts5-dev qt5-image-formats-plugins \
+      libz-dev libzstd-dev libbz2-dev liblzma-dev libssl-dev \
+      qtbase5-dev qtbase5-dev-tools libqt5charts5-dev \
  && rm -rf /var/lib/apt/lists/*
-# Configure + build + install (re-runs on tweaks; clone/deps stay cached).
-# Per iic-osic-tools' recipe for this exact commit:
-#  - USE_SYSTEM_BOOST=ON  : use Ubuntu's Boost, avoiding the OR-Tools-bundled
-#                           Boost (1.87) vs installer Boost (1.89) version skew.
-#  - patch tcl.h          : SWIG 4.3 generates Tcl_Size (Tcl 9) but Ubuntu has
-#                           Tcl 8.6 — make the typedef visible to all units.
-#  - BUILD_GUI=OFF (headless) · ENABLE_TESTS=OFF.
+# SWIG >= 4.3 (Ubuntu 24.04 ships 4.2) + spdlog 1.15.1 from source (per iic).
+RUN git clone --depth=1 -b v4.3.0 https://github.com/swig/swig.git /tmp/swig \
+ && cd /tmp/swig && ./autogen.sh && ./configure --prefix=/usr/local \
+ && make -j"$(nproc)" && make install && rm -rf /tmp/swig
+RUN git clone --depth=1 -b v1.15.1 https://github.com/gabime/spdlog.git /tmp/spdlog \
+ && cd /tmp/spdlog \
+ && cmake -DCMAKE_INSTALL_PREFIX=/usr/local -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DSPDLOG_BUILD_EXAMPLE=OFF -B build . \
+ && cmake --build build -j"$(nproc)" --target install && rm -rf /tmp/spdlog
+# Clone OpenROAD (cached across the cmake/build tweaks below).
+RUN git clone --filter=blob:none https://github.com/The-OpenROAD-Project/OpenROAD.git /tmp/openroad \
+ && cd /tmp/openroad && git checkout "${OPENROAD_REF}" && git submodule update --init --recursive
+# Patch tcl.h (SWIG 4.3 emits Tcl_Size; Ubuntu has Tcl 8.6) + configure + build.
+# OpenROAD builds OR-Tools itself; USE_SYSTEM_BOOST=ON; BUILD_GUI=OFF (headless).
 RUN grep -q Tcl_Size /usr/include/tcl/tcl.h \
       || printf '\n#ifndef Tcl_Size\ntypedef int Tcl_Size;\n#endif\n' >> /usr/include/tcl/tcl.h \
- && cd /tmp/openroad \
- && cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="${EDA_PREFIX}" \
+ && cd /tmp/openroad && mkdir -p build && cd build \
+ && cmake .. -DCMAKE_INSTALL_PREFIX="${EDA_PREFIX}" -DSWIG_EXECUTABLE=/usr/local/bin/swig \
       -DUSE_SYSTEM_BOOST=ON -DBUILD_GUI=OFF -DENABLE_TESTS=OFF \
- && cmake --build build -j"$(nproc)" --target install \
+ && make -j"$(nproc)" && make install \
  && rm -rf /tmp/openroad
 
 # ── Vyges binaries (Rust) — CLI suite + EDA engines (same Ubuntu = glibc match) ─
