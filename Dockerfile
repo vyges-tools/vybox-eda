@@ -273,11 +273,20 @@ COPY --from=openroad  /opt/vyges/eda /opt/vyges/eda
 COPY --from=openroad  /opt/or-tools/lib /opt/or-tools/lib
 ENV PATH=/opt/vyges/eda/bin:/opt/vyges/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
     LD_LIBRARY_PATH=/opt/or-tools/lib:/usr/local/lib
-# Open PDKs (sky130A + gf180mcu) via ciel, pinned to an open_pdks SHA. VALIDATE.
+# Open PDKs (sky130A + gf180mcu) via ciel, pinned to an open_pdks SHA.
+# Retry each family — ciel's PDK download can hit a transient read timeout on
+# hosted CI runners ("The read operation timed out"); up to 5 attempts w/ backoff.
 RUN pip3 install --no-cache-dir --break-system-packages ciel \
  && mkdir -p "${PDK_ROOT}" \
- && ciel enable --pdk-root "${PDK_ROOT}" --pdk-family sky130   "${OPEN_PDKS_REF}" \
- && ciel enable --pdk-root "${PDK_ROOT}" --pdk-family gf180mcu "${OPEN_PDKS_REF}"
+ && for fam in sky130 gf180mcu; do \
+      n=0; \
+      until ciel enable --pdk-root "${PDK_ROOT}" --pdk-family "$fam" "${OPEN_PDKS_REF}"; do \
+        n=$((n+1)); \
+        if [ "$n" -ge 5 ]; then echo "ciel enable $fam failed after $n attempts" >&2; exit 1; fi; \
+        echo "ciel enable $fam attempt $n timed out/failed; retrying in $((n*15))s…" >&2; \
+        sleep "$((n*15))"; \
+      done; \
+    done
 WORKDIR /work
 COPY scripts/smoke-test.sh /usr/local/bin/vybox-eda-smoke
 RUN chmod +x /usr/local/bin/vybox-eda-smoke
