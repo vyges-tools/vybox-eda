@@ -106,23 +106,59 @@ RUN curl -fsSL "https://downloads.sourceforge.net/project/ngspice/ng-spice-rewor
  && make -j"$(nproc)" && make install && rm -rf /tmp/ngspice*
 
 # ── OpenROAD — built the iic-osic-tools way (the long pole, ~45-90 min). ──────
-# We do NOT use OpenROAD's DependencyInstaller: it installs a prebuilt OR-Tools
-# that bundles *static* Boost 1.87 AND builds *shared* Boost 1.89 — they conflict
-# (the build wants shared 1.87, which exists nowhere). iic instead uses system
-# Boost (apt) + -DUSE_SYSTEM_BOOST=ON and lets OpenROAD build OR-Tools itself
-# against that one consistent Boost.
+# OpenROAD does NOT build its own dependencies: src/CMakeLists.txt does
+# find_package(absl REQUIRED) and find_package(ortools) against a *prebuilt*
+# /opt/or-tools, plus find_package on CUDD and LEMON. We must supply all of them.
+# We do NOT use OpenROAD's DependencyInstaller (it pins a prebuilt OR-Tools that
+# bundles static Boost 1.87 while separately building shared Boost 1.89 — they
+# conflict). Instead, exactly like iic: system Boost (apt) + OR-Tools 9.14 built
+# from source to /opt/or-tools, then DELETE OR-Tools' bundled Boost cmake configs
+# so OpenROAD's find_package(Boost) resolves to the one consistent system Boost.
 FROM build-deps AS openroad
 ARG OPENROAD_REF
 ARG EDA_PREFIX
+ARG ORTOOLS_VERSION=9.14
+ARG CUDD_VERSION=3.0.0
+ARG LEMON_VERSION=1.3.1
 # System deps (iic base-dev's OpenROAD-relevant apt set): full system Boost +
-# the libs OpenROAD/OR-Tools need.
-RUN apt-get update && apt-get install -y --no-install-recommends \
-      libboost-all-dev libeigen3-dev libre2-dev libfmt-dev libyaml-cpp-dev \
+# the libs OpenROAD/OR-Tools need. NOTE: drop --no-install-recommends here so
+# libre2-dev pulls libabsl-dev (the same recommends trap that bit libfl-dev);
+# abseil also comes from OR-Tools BUILD_DEPS below, this is belt-and-suspenders.
+RUN apt-get update && apt-get install -y \
+      libboost-all-dev libeigen3-dev libre2-dev libabsl-dev libfmt-dev libyaml-cpp-dev \
       libomp-dev libtbb-dev libgmp-dev libspdlog-dev \
       libgl1-mesa-dev libglu1-mesa-dev \
       libz-dev libzstd-dev libbz2-dev liblzma-dev libssl-dev \
       qtbase5-dev qtbase5-dev-tools libqt5charts5-dev \
  && rm -rf /var/lib/apt/lists/*
+# OR-Tools 9.14 from source → /opt/or-tools (per iic 31_install_or-tools.sh).
+# BUILD_DEPS=ON builds abseil/re2/protobuf/SCIP/Clp/Cbc and installs them here,
+# satisfying OpenROAD's find_package(absl) and find_package(ortools).
+# THEN remove OR-Tools' bundled (static, 1.87) Boost cmake configs + headers +
+# libs: OR-Tools statically links Boost so it doesn't need them, and leaving them
+# makes OpenROAD's find_package(Boost) demand exactly 1.87 (which conflicts with
+# the system 1.83/1.89). This single rm is the fix for the src/utl/src/drt
+# "Boost-1.87.0 ... boost_iostreams 1.87.0" configure failure.
+RUN cd /tmp \
+ && wget -q "https://github.com/google/or-tools/archive/refs/tags/v${ORTOOLS_VERSION}.tar.gz" \
+ && tar -xf "v${ORTOOLS_VERSION}.tar.gz" && cd "or-tools-${ORTOOLS_VERSION}" \
+ && cmake -B build . -DCMAKE_INSTALL_PREFIX=/opt/or-tools -DBUILD_DEPS:BOOL=ON \
+      -DBUILD_EXAMPLES:BOOL=OFF -DBUILD_SAMPLES:BOOL=OFF -DBUILD_TESTING:BOOL=OFF \
+      -DCMAKE_CXX_FLAGS="-w" -DCMAKE_C_FLAGS="-w" \
+ && cmake --build build --config Release -j"$(nproc)" --target install \
+ && rm -rf /opt/or-tools/lib/cmake/Boost-* /opt/or-tools/lib/cmake/boost_* \
+           /opt/or-tools/include/boost /opt/or-tools/lib/libboost_* \
+ && rm -rf /tmp/*
+# CUDD 3.0.0 → /usr/local (per iic 32_install_cudd.sh).
+RUN cd /tmp && git clone --depth=1 -b "${CUDD_VERSION}" https://github.com/The-OpenROAD-Project/cudd.git \
+ && cd cudd && autoreconf && ./configure --prefix=/usr/local \
+ && make -j"$(nproc)" install && rm -rf /tmp/*
+# LEMON 1.3.1 → /usr/local (per iic 35_install_lemon.sh).
+RUN cd /tmp && git clone --depth=1 -b "${LEMON_VERSION}" https://github.com/The-OpenROAD-Project/lemon-graph.git \
+ && cd lemon-graph \
+ && cmake -D CMAKE_INSTALL_PREFIX=/usr/local -D LEMON_ENABLE_GLPK=NO -D LEMON_ENABLE_COIN=NO \
+      -D LEMON_ENABLE_ILOG=NO -D LEMON_ENABLE_SOPLEX=NO -B build . \
+ && cmake --build build -j"$(nproc)" --target install && rm -rf /tmp/*
 # SWIG >= 4.3 (Ubuntu 24.04 ships 4.2) + spdlog 1.15.1 from source (per iic).
 RUN git clone --depth=1 -b v4.3.0 https://github.com/swig/swig.git /tmp/swig \
  && cd /tmp/swig && ./autogen.sh && ./configure --prefix=/usr/local \
@@ -135,12 +171,14 @@ RUN git clone --depth=1 -b v1.15.1 https://github.com/gabime/spdlog.git /tmp/spd
 RUN git clone --filter=blob:none https://github.com/The-OpenROAD-Project/OpenROAD.git /tmp/openroad \
  && cd /tmp/openroad && git checkout "${OPENROAD_REF}" && git submodule update --init --recursive
 # Patch tcl.h (SWIG 4.3 emits Tcl_Size; Ubuntu has Tcl 8.6) + configure + build.
-# OpenROAD builds OR-Tools itself; USE_SYSTEM_BOOST=ON; BUILD_GUI=OFF (headless).
+# CMAKE_PREFIX_PATH=/opt/or-tools points find_package at the OR-Tools/absl we built.
+# USE_SYSTEM_BOOST=ON; BUILD_GUI=OFF (headless).
 RUN grep -q Tcl_Size /usr/include/tcl/tcl.h \
       || printf '\n#ifndef Tcl_Size\ntypedef int Tcl_Size;\n#endif\n' >> /usr/include/tcl/tcl.h \
  && cd /tmp/openroad && mkdir -p build && cd build \
  && cmake .. -DCMAKE_INSTALL_PREFIX="${EDA_PREFIX}" -DSWIG_EXECUTABLE=/usr/local/bin/swig \
-      -DUSE_SYSTEM_BOOST=ON -DBUILD_GUI=OFF -DENABLE_TESTS=OFF \
+      -DCMAKE_PREFIX_PATH=/opt/or-tools -DUSE_SYSTEM_BOOST=ON \
+      -DBUILD_GUI=OFF -DENABLE_TESTS=OFF \
  && make -j"$(nproc)" && make install \
  && rm -rf /tmp/openroad
 
@@ -217,7 +255,11 @@ COPY --from=magic     /opt/vyges/eda /opt/vyges/eda
 COPY --from=netgen    /opt/vyges/eda /opt/vyges/eda
 COPY --from=ngspice   /opt/vyges/eda /opt/vyges/eda
 COPY --from=openroad  /opt/vyges/eda /opt/vyges/eda
-ENV PATH=/opt/vyges/eda/bin:/opt/vyges/bin:/usr/bin:/bin
+# OpenROAD dynamically links OR-Tools (libortools.so + abseil/protobuf/scip);
+# carry just the shared libs and put them on the loader path.
+COPY --from=openroad  /opt/or-tools/lib /opt/or-tools/lib
+ENV PATH=/opt/vyges/eda/bin:/opt/vyges/bin:/usr/bin:/bin \
+    LD_LIBRARY_PATH=/opt/or-tools/lib:/usr/local/lib
 # Open PDKs (sky130A + gf180mcu) via ciel, pinned to an open_pdks SHA. VALIDATE.
 RUN pip3 install --no-cache-dir --break-system-packages ciel \
  && mkdir -p "${PDK_ROOT}" \
