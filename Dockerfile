@@ -167,6 +167,12 @@ RUN git clone --depth=1 -b v1.15.1 https://github.com/gabime/spdlog.git /tmp/spd
  && cd /tmp/spdlog \
  && cmake -DCMAKE_INSTALL_PREFIX=/usr/local -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DSPDLOG_BUILD_EXAMPLE=OFF -B build . \
  && cmake --build build -j"$(nproc)" --target install && rm -rf /tmp/spdlog
+# GoogleTest/GMock — OpenSTA's src/sta/CMakeLists.txt does find_package(GTest)
+# unconditionally (even with ENABLE_TESTS=OFF). Ubuntu 24.04's packages ship the
+# cmake config. Separate layer so the OR-Tools layer above stays cached.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      libgtest-dev libgmock-dev \
+ && rm -rf /var/lib/apt/lists/*
 # Clone OpenROAD (cached across the cmake/build tweaks below).
 RUN git clone --filter=blob:none https://github.com/The-OpenROAD-Project/OpenROAD.git /tmp/openroad \
  && cd /tmp/openroad && git checkout "${OPENROAD_REF}" && git submodule update --init --recursive
