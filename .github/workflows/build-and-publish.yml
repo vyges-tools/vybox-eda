@@ -121,8 +121,11 @@ jobs:
           push: ${{ inputs.push }}
           tags: ${{ steps.tags.outputs.tags }}
           build-args: ${{ steps.pins.outputs.args }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # Registry-backed buildkit cache (no 10 GB GHA-cache eviction): once a
+          # build succeeds, the heavy OR-Tools/OpenROAD layers persist here, so later
+          # runs reuse them instead of re-downloading + re-compiling from source.
+          cache-from: type=registry,ref=ghcr.io/vyges-tools/vybox-eda:buildcache
+          cache-to: type=registry,ref=ghcr.io/vyges-tools/vybox-eda:buildcache,mode=max
 
   # Keep the Docker Hub repo "Overview" in sync with README.md.
   dockerhub-readme:

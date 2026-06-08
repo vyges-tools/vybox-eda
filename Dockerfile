@@ -144,13 +144,23 @@ RUN apt-get update && apt-get install -y \
 # makes OpenROAD's find_package(Boost) demand exactly 1.87 (which conflicts with
 # the system 1.83/1.89). This single rm is the fix for the src/utl/src/drt
 # "Boost-1.87.0 ... boost_iostreams 1.87.0" configure failure.
+# Network-resilient: OR-Tools BUILD_DEPS downloads Boost/abseil/protobuf/SCIP from
+# GitHub during configure+build, which intermittently 504s on hosted CI. curl
+# --retry for the tarball; an until-loop around cmake configure+build so a transient
+# download retries (the build dir persists, so it resumes — not a full recompile).
 RUN cd /tmp \
- && curl -fsSL "https://github.com/google/or-tools/archive/refs/tags/v${ORTOOLS_VERSION}.tar.gz" -o "v${ORTOOLS_VERSION}.tar.gz" \
+ && curl -fsSL --retry 5 --retry-all-errors --retry-delay 10 \
+      "https://github.com/google/or-tools/archive/refs/tags/v${ORTOOLS_VERSION}.tar.gz" -o "v${ORTOOLS_VERSION}.tar.gz" \
  && tar -xf "v${ORTOOLS_VERSION}.tar.gz" && cd "or-tools-${ORTOOLS_VERSION}" \
- && cmake -B build . -DCMAKE_INSTALL_PREFIX=/opt/or-tools -DBUILD_DEPS:BOOL=ON \
-      -DBUILD_EXAMPLES:BOOL=OFF -DBUILD_SAMPLES:BOOL=OFF -DBUILD_TESTING:BOOL=OFF \
-      -DCMAKE_CXX_FLAGS="-w" -DCMAKE_C_FLAGS="-w" \
- && cmake --build build --config Release -j"$(nproc)" --target install \
+ && n=0; until cmake -B build . -DCMAKE_INSTALL_PREFIX=/opt/or-tools -DBUILD_DEPS:BOOL=ON \
+        -DBUILD_EXAMPLES:BOOL=OFF -DBUILD_SAMPLES:BOOL=OFF -DBUILD_TESTING:BOOL=OFF \
+        -DCMAKE_CXX_FLAGS="-w" -DCMAKE_C_FLAGS="-w" \
+      && cmake --build build --config Release -j"$(nproc)" --target install; do \
+        n=$((n+1)); \
+        if [ "$n" -ge 5 ]; then echo "or-tools build failed after $n attempts" >&2; exit 1; fi; \
+        echo "or-tools attempt $n hit a transient (likely a GitHub download 504); retrying in $((n*20))s…" >&2; \
+        sleep "$((n*20))"; \
+      done \
  && rm -rf /opt/or-tools/lib/cmake/Boost-* /opt/or-tools/lib/cmake/boost_* \
            /opt/or-tools/include/boost /opt/or-tools/lib/libboost_* \
  && rm -rf /tmp/*
