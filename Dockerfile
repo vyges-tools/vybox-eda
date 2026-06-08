@@ -110,9 +110,15 @@ RUN curl -fsSL "https://downloads.sourceforge.net/project/ngspice/ng-spice-rewor
 FROM build-deps AS openroad
 ARG OPENROAD_REF
 ARG EDA_PREFIX
-RUN git clone --recursive https://github.com/The-OpenROAD-Project/OpenROAD.git /tmp/openroad \
+# Clone + OpenROAD's own dep installer + deps it misses (libyaml-cpp-dev for
+# odb/3dblox). Separate layer so cmake/build tweaks below don't re-clone.
+RUN apt-get update && apt-get install -y --no-install-recommends libyaml-cpp-dev \
+ && rm -rf /var/lib/apt/lists/* \
+ && git clone --recursive https://github.com/The-OpenROAD-Project/OpenROAD.git /tmp/openroad \
  && cd /tmp/openroad && git checkout "${OPENROAD_REF}" && git submodule update --init --recursive \
- && ./etc/DependencyInstaller.sh -base -common \
+ && ./etc/DependencyInstaller.sh -base -common
+# Configure + build + install (re-runs on tweaks; clone/deps stay cached).
+RUN cd /tmp/openroad \
  && cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="${EDA_PREFIX}" \
  && cmake --build build -j"$(nproc)" --target install \
  && rm -rf /tmp/openroad
