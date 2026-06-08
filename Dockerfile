@@ -117,9 +117,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends libyaml-cpp-dev
  && git clone --recursive https://github.com/The-OpenROAD-Project/OpenROAD.git /tmp/openroad \
  && cd /tmp/openroad && git checkout "${OPENROAD_REF}" && git submodule update --init --recursive \
  && ./etc/DependencyInstaller.sh -base -common
+# GUI build deps: OpenROAD configures src/gui unconditionally (needs OpenGL + Qt5).
+# DependencyInstaller's Qt list pins the removed `qt5-default`, so it no-ops on
+# Ubuntu 24.04 — install the current packages explicitly. Separate layer so it
+# doesn't bust the clone/deps cache above.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      libgl1-mesa-dev libglu1-mesa-dev \
+      qtbase5-dev qtbase5-dev-tools libqt5charts5-dev qt5-image-formats-plugins \
+ && rm -rf /var/lib/apt/lists/*
 # Configure + build + install (re-runs on tweaks; clone/deps stay cached).
-# Headless image: BUILD_GUI=OFF skips src/gui (no OpenGL/Qt). ENABLE_TESTS=OFF
-# skips the test suite (faster, fewer deps).
+# BUILD_GUI=OFF compiles the GUI out of the binary; ENABLE_TESTS=OFF skips tests.
 RUN cd /tmp/openroad \
  && cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="${EDA_PREFIX}" \
       -DBUILD_GUI=OFF -DENABLE_TESTS=OFF \
