@@ -79,11 +79,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends help2man perl l
 FROM build-deps AS magic
 ARG MAGIC_REF
 ARG EDA_PREFIX
+# Magic's Makefile has incomplete inter-module dependencies, so `make -j` is racy
+# (e.g. cmwind can compile before database/ headers land — fails on some core
+# counts, passes on others). Fall back to a serial `make` to finish any object the
+# parallel pass missed; it's deterministic and magic is small.
 RUN apt-get update && apt-get install -y --no-install-recommends mesa-common-dev libglu1-mesa-dev \
  && rm -rf /var/lib/apt/lists/* \
  && git clone https://github.com/RTimothyEdwards/magic.git /tmp/magic \
  && cd /tmp/magic && git checkout "${MAGIC_REF}" \
- && ./configure --prefix="${EDA_PREFIX}" && make -j"$(nproc)" && make install \
+ && ./configure --prefix="${EDA_PREFIX}" \
+ && { make -j"$(nproc)" || make; } && make install \
  && rm -rf /tmp/magic
 
 # ── Netgen (LVS) ────────────────────────────────────────────────────────────

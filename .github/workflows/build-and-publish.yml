@@ -23,6 +23,17 @@ on:
         description: "Push to registries (else build-only)"
         type: boolean
         default: true
+  # Manual-only today. When we later enable auto-builds on code changes, uncomment
+  # the push trigger below — docs are already excluded so README/docs/ commits never
+  # kick off the (multi-hour) build. Keep these paths-ignore globs in sync with
+  # .dockerignore. (paths-ignore only affects push/PR events, not workflow_dispatch.)
+  # push:
+  #   branches: [main]
+  #   paths-ignore:
+  #     - '**/*.md'
+  #     - 'docs/**'
+  #     - 'LICENSE'
+  #     - 'NOTICE'
 
 permissions:
   contents: read
