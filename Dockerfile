@@ -226,6 +226,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       libgl1 libglu1-mesa libfontconfig1 \
       libboost-system1.83.0 libboost-filesystem1.83.0 \
       libboost-python1.83.0 libboost-program-options1.83.0 \
+      libboost-serialization1.83.0 libboost-thread1.83.0 libboost-iostreams1.83.0 \
+      libyaml-cpp0.8 \
  && rm -rf /var/lib/apt/lists/*
 # Pin the interpreter (cpython-3.12 ABI for any python tool modules).
 RUN python3 --version | grep -q "Python ${PYTHON_VERSION}" \
