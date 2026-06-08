@@ -126,10 +126,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       qtbase5-dev qtbase5-dev-tools libqt5charts5-dev qt5-image-formats-plugins \
  && rm -rf /var/lib/apt/lists/*
 # Configure + build + install (re-runs on tweaks; clone/deps stay cached).
-# BUILD_GUI=OFF compiles the GUI out of the binary; ENABLE_TESTS=OFF skips tests.
-RUN cd /tmp/openroad \
+# Per iic-osic-tools' recipe for this exact commit:
+#  - USE_SYSTEM_BOOST=ON  : use Ubuntu's Boost, avoiding the OR-Tools-bundled
+#                           Boost (1.87) vs installer Boost (1.89) version skew.
+#  - patch tcl.h          : SWIG 4.3 generates Tcl_Size (Tcl 9) but Ubuntu has
+#                           Tcl 8.6 — make the typedef visible to all units.
+#  - BUILD_GUI=OFF (headless) · ENABLE_TESTS=OFF.
+RUN grep -q Tcl_Size /usr/include/tcl/tcl.h \
+      || printf '\n#ifndef Tcl_Size\ntypedef int Tcl_Size;\n#endif\n' >> /usr/include/tcl/tcl.h \
+ && cd /tmp/openroad \
  && cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="${EDA_PREFIX}" \
-      -DBUILD_GUI=OFF -DENABLE_TESTS=OFF \
+      -DUSE_SYSTEM_BOOST=ON -DBUILD_GUI=OFF -DENABLE_TESTS=OFF \
  && cmake --build build -j"$(nproc)" --target install \
  && rm -rf /tmp/openroad
 
