@@ -145,7 +145,7 @@ RUN apt-get update && apt-get install -y \
 # the system 1.83/1.89). This single rm is the fix for the src/utl/src/drt
 # "Boost-1.87.0 ... boost_iostreams 1.87.0" configure failure.
 RUN cd /tmp \
- && wget -q "https://github.com/google/or-tools/archive/refs/tags/v${ORTOOLS_VERSION}.tar.gz" \
+ && curl -fsSL "https://github.com/google/or-tools/archive/refs/tags/v${ORTOOLS_VERSION}.tar.gz" -o "v${ORTOOLS_VERSION}.tar.gz" \
  && tar -xf "v${ORTOOLS_VERSION}.tar.gz" && cd "or-tools-${ORTOOLS_VERSION}" \
  && cmake -B build . -DCMAKE_INSTALL_PREFIX=/opt/or-tools -DBUILD_DEPS:BOOL=ON \
       -DBUILD_EXAMPLES:BOOL=OFF -DBUILD_SAMPLES:BOOL=OFF -DBUILD_TESTING:BOOL=OFF \
