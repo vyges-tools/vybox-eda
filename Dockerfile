@@ -37,6 +37,17 @@ ARG FREECAD_VERSION=1.0
 ARG OPENSCAD_VERSION=2021.01
 # Common install prefix every source-built tool uses (one COPY into the runtime).
 ARG EDA_PREFIX=/opt/vyges/eda
+# ── FPGA flow (fpga target) — Lattice Nexus open toolchain + LiteX ───────────
+# Pins resolved against upstream HEADs 2026-06-21 (sv2v/slang aligned to tools.yml).
+ARG SLANG_PLUGIN_REF=cf20b1ba0d2c9df0508f927930a87565e7e0d220   # povik/yosys-slang (read_slang)
+ARG SV2V_VERSION=v0.0.13                                        # zachjs/sv2v (release binary)
+ARG PRJOXIDE_REF=9ab3b4ee3b9c5c1d210243c667b1f39ee7c01496       # gatecat/prjoxide (Nexus bitstream)
+ARG NEXTPNR_REF=2b560ad0ccc6e7e93ad8bd6cb0f88f925bbb314b        # YosysHQ/nextpnr (P&R)
+ARG LITEX_REF=f23babce22db4b0803cdb3e78a01653bcba9a337          # enjoy-digital/litex (SoC framework)
+ARG FPGA_PREFIX=/opt/vyges/fpga
+# Reuse a prebuilt rtl2gds-base (e.g. the published image) instead of rebuilding
+# it from scratch: pass --build-arg RTL2GDS_BASE=ghcr.io/vyges-tools/vybox-eda:rtl2gds-base.
+ARG RTL2GDS_BASE=rtl2gds-base
 
 # ============================================================================
 # build-deps — shared apt layer for the source builds (cached once).
@@ -318,3 +329,105 @@ FROM rtl2gds AS full
 RUN apt-get update && apt-get install -y --no-install-recommends \
       kicad openscad freecad \
  && rm -rf /var/lib/apt/lists/*
+
+# ============================================================================
+# FPGA flow — the open Lattice Nexus toolchain (CrossLink-NX / Certus-NX) + LiteX,
+# layered on rtl2gds-base (which already ships yosys + Verilator). Source-pinned,
+# same as the ASIC tools. Build it reusing the published base to skip the long
+# OpenROAD rebuild:
+#   podman build --target fpga \
+#     --build-arg RTL2GDS_BASE=ghcr.io/vyges-tools/vybox-eda:rtl2gds-base -t …:fpga .
+# VALIDATE on first build: yosys-slang make flags; prjoxide crate path + database
+# dir; nextpnr-nexus chipdb gen (memory-heavy); litex_setup sub-repo pinning.
+# ============================================================================
+
+# ── yosys-slang (SystemVerilog front-end plugin) — built against our yosys ────
+FROM ${RTL2GDS_BASE} AS slang-plugin
+ARG SLANG_PLUGIN_REF
+ARG EDA_PREFIX
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      build-essential cmake git ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+RUN git clone https://github.com/povik/yosys-slang /tmp/yosys-slang \
+ && cd /tmp/yosys-slang && git checkout "${SLANG_PLUGIN_REF}" \
+ && git submodule update --init --recursive \
+ && make -j"$(nproc)" YOSYS_CONFIG="${EDA_PREFIX}/bin/yosys-config" \
+ && make install YOSYS_CONFIG="${EDA_PREFIX}/bin/yosys-config" \
+ && rm -rf /tmp/yosys-slang
+
+# ── sv2v (SystemVerilog -> Verilog-2005) — pinned official release binary ─────
+FROM build-deps AS sv2v
+ARG SV2V_VERSION
+ARG FPGA_PREFIX
+RUN apt-get update && apt-get install -y --no-install-recommends unzip \
+ && rm -rf /var/lib/apt/lists/* \
+ && curl -fsSL "https://github.com/zachjs/sv2v/releases/download/${SV2V_VERSION}/sv2v-Linux.zip" -o /tmp/sv2v.zip \
+ && cd /tmp && unzip sv2v.zip \
+ && install -Dm755 "$(find /tmp -name sv2v -type f | head -1)" "${FPGA_PREFIX}/bin/sv2v" \
+ && rm -rf /tmp/sv2v*
+
+# ── prjoxide (Nexus bitstream tooling) — Rust ─────────────────────────────────
+FROM build-deps AS prjoxide
+ARG PRJOXIDE_REF
+ARG RUST_VERSION
+ARG FPGA_PREFIX
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+      | sh -s -- -y --default-toolchain "${RUST_VERSION}" --profile minimal
+ENV PATH=/root/.cargo/bin:${PATH}
+RUN git clone --recursive https://github.com/gatecat/prjoxide /tmp/prjoxide \
+ && cd /tmp/prjoxide && git checkout "${PRJOXIDE_REF}" \
+ && git submodule update --init --recursive \
+ && cd libprjoxide && cargo build --release \
+ && install -Dm755 target/release/prjoxide "${FPGA_PREFIX}/bin/prjoxide" \
+ && mkdir -p "${FPGA_PREFIX}/share/prjoxide" \
+ && cp -r /tmp/prjoxide/database "${FPGA_PREFIX}/share/prjoxide/database" \
+ && rm -rf /tmp/prjoxide /root/.cargo/registry /root/.cargo/git
+
+# ── nextpnr-nexus (FPGA place & route) ────────────────────────────────────────
+FROM build-deps AS nextpnr
+ARG NEXTPNR_REF
+ARG FPGA_PREFIX
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      libboost-all-dev libeigen3-dev python3-dev \
+ && rm -rf /var/lib/apt/lists/*
+COPY --from=prjoxide ${FPGA_PREFIX} ${FPGA_PREFIX}
+ENV PATH=${FPGA_PREFIX}/bin:${PATH} \
+    PRJOXIDE_DB=${FPGA_PREFIX}/share/prjoxide/database
+RUN git clone https://github.com/YosysHQ/nextpnr /tmp/nextpnr \
+ && cd /tmp/nextpnr && git checkout "${NEXTPNR_REF}" \
+ && git submodule update --init --recursive \
+ && cmake -B build -DARCH=nexus \
+      -DOXIDE_INSTALL_PREFIX="${FPGA_PREFIX}" \
+      -DCMAKE_INSTALL_PREFIX="${FPGA_PREFIX}" \
+      -DBUILD_GUI=OFF -DBUILD_TESTS=OFF . \
+ && cmake --build build -j"$(nproc)" --target install \
+ && rm -rf /tmp/nextpnr
+
+# ── fpga — the published image: rtl2gds-base + FPGA toolchain + LiteX ─────────
+FROM ${RTL2GDS_BASE} AS fpga
+ARG EDA_PREFIX
+ARG FPGA_PREFIX
+ARG LITEX_REF
+ENV DEBIAN_FRONTEND=noninteractive
+# Front-ends (slang plugin into yosys' plugin dir) + Nexus P&R tools.
+COPY --from=slang-plugin ${EDA_PREFIX}/share/yosys/plugins ${EDA_PREFIX}/share/yosys/plugins
+COPY --from=sv2v     ${FPGA_PREFIX} ${FPGA_PREFIX}
+COPY --from=prjoxide ${FPGA_PREFIX} ${FPGA_PREFIX}
+COPY --from=nextpnr  ${FPGA_PREFIX} ${FPGA_PREFIX}
+ENV PATH=${FPGA_PREFIX}/bin:${EDA_PREFIX}/bin:/opt/vyges/bin:/usr/local/bin:/usr/bin:/bin \
+    PRJOXIDE_DB=${FPGA_PREFIX}/share/prjoxide/database \
+    PIP_BREAK_SYSTEM_PACKAGES=1
+# RISC-V bare-metal toolchain (LiteX BIOS / firmware) + LiteX SoC framework.
+# (PyPI `litex` is stale and breaks on Python 3.12 — install the official set via
+# litex_setup.py, pinned to LITEX_REF.)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      gcc-riscv64-unknown-elf ninja-build \
+ && rm -rf /var/lib/apt/lists/*
+RUN mkdir -p /opt/litex && cd /opt/litex \
+ && curl -fsSL "https://raw.githubusercontent.com/enjoy-digital/litex/${LITEX_REF}/litex_setup.py" -o litex_setup.py \
+ && python3 litex_setup.py --init --install --break-system-packages \
+ && python3 -c "from litex.soc.integration.soc_core import SoCCore; print('litex import OK')"
+LABEL org.opencontainers.image.title="vybox-eda-fpga" \
+      org.opencontainers.image.source="https://github.com/vyges-tools/vybox-eda" \
+      org.opencontainers.image.licenses="Apache-2.0"

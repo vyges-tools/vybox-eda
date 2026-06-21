@@ -38,6 +38,18 @@ compiled:
   spike:               c567a199a7dbd9c0f5689e0567415c76d9a21ade   # RISC-V ISA sim
   # OpenSTA: no standalone entry — vendored in OpenROAD (above), pinned by its commit.
 
+# ── FPGA flow (fpga target) — Lattice Nexus open toolchain + LiteX ────────────
+# Layered on rtl2gds-base (reuses its yosys + Verilator). Pins live in
+# versions.lock; resolved against upstream HEADs 2026-06-21. The fpga target uses
+# the apt gcc-riscv64-unknown-elf bare-metal toolchain for the LiteX BIOS (not the
+# source riscv-gnu-toolchain above).
+fpga:
+  slang-yosys-plugin:  cf20b1ba0d2c9df0508f927930a87565e7e0d220   # read_slang SV frontend
+  sv2v:                v0.0.13                                    # SV -> Verilog (release binary)
+  prjoxide:            9ab3b4ee3b9c5c1d210243c667b1f39ee7c01496   # Nexus bitstream
+  nextpnr-nexus:       2b560ad0ccc6e7e93ad8bd6cb0f88f925bbb314b   # FPGA place & route
+  litex:               f23babce22db4b0803cdb3e78a01653bcba9a337   # SoC framework (litex_setup.py)
+
 # ── Python flow tools — pip install at pinned versions (confirm via pip show) ─
 python:
   librelane: TBD    # RTL2GDS flow scripts

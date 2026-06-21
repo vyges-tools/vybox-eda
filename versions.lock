@@ -29,3 +29,11 @@ RUST_VERSION=1.83
 KICAD_VERSION=8.0
 FREECAD_VERSION=1.0
 OPENSCAD_VERSION=2021.01
+
+# FPGA flow (fpga target) — Lattice Nexus open toolchain + LiteX.
+# Pins resolved against upstream HEADs 2026-06-21 (sv2v/slang aligned to tools.yml).
+SLANG_PLUGIN_REF=cf20b1ba0d2c9df0508f927930a87565e7e0d220
+SV2V_VERSION=v0.0.13
+PRJOXIDE_REF=9ab3b4ee3b9c5c1d210243c667b1f39ee7c01496
+NEXTPNR_REF=2b560ad0ccc6e7e93ad8bd6cb0f88f925bbb314b
+LITEX_REF=f23babce22db4b0803cdb3e78a01653bcba9a337
