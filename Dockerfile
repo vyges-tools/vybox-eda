@@ -421,13 +421,19 @@ ENV PATH=${FPGA_PREFIX}/bin:${EDA_PREFIX}/bin:/opt/vyges/bin:/usr/local/bin:/usr
 # RISC-V bare-metal toolchain (LiteX BIOS / firmware) + LiteX SoC framework.
 # (PyPI `litex` is stale and breaks on Python 3.12 — install the official set via
 # litex_setup.py, pinned to LITEX_REF.)
+# gcc-riscv64-unknown-elf: LiteX BIOS/firmware. ninja-build + meson (below): LiteX
+# sim/gateware build. libevent/json-c/zlib: LiteX sim-core console + helper modules
+# (serial2console epoll, JSON config parse, ethernet module) — found via the sim.
 RUN apt-get update && apt-get install -y --no-install-recommends \
       gcc-riscv64-unknown-elf ninja-build \
+      libevent-dev libjson-c-dev zlib1g-dev \
  && rm -rf /var/lib/apt/lists/*
 RUN mkdir -p /opt/litex && cd /opt/litex \
  && curl -fsSL "https://raw.githubusercontent.com/enjoy-digital/litex/${LITEX_REF}/litex_setup.py" -o litex_setup.py \
  && python3 litex_setup.py --init --install --break-system-packages \
  && python3 -c "from litex.soc.integration.soc_core import SoCCore; print('litex import OK')"
+# LiteX's simulation/gateware build drives Verilator via Meson + Ninja.
+RUN pip3 install --no-cache-dir meson
 LABEL org.opencontainers.image.title="vybox-eda-fpga" \
       org.opencontainers.image.source="https://github.com/vyges-tools/vybox-eda" \
       org.opencontainers.image.licenses="Apache-2.0"
