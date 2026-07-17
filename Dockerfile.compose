@@ -1,0 +1,80 @@
+# vybox-eda (compose) — a single, light, MULTI-ARCH EDA container for digital +
+# analog + mixed-signal flows. Instead of rebuilding every tool from source, this
+# COMPOSES the Vyges multi-arch tool bundles + apt tools + Vyges CLI/Loom + PDKs.
+#
+# Multi-arch falls out for free: `COPY --from=<vyges-* image>` pulls the variant
+# matching the build platform (our images are multi-arch manifests), and apt / the
+# vyges installer / pdk-store are all multi-arch. Build with buildx multi-platform.
+#
+# DRAFT — builds once the last two bundles publish (vyges-openroad, vyges-yosys).
+# ⚠ arm64 analog caveat: a PDK's OSDI models (psp103.osdi …) are arch-specific,
+#   compiled x86_64 upstream. arm64 analog sim needs arm64-recompiled OSDI (OpenVAF);
+#   the digital flow (yosys/openroad/klayout/magic/netgen) is fully arm64.
+
+ARG UBUNTU_VERSION=24.04
+
+# ── Vyges multi-arch tool bundles (from-source distros) ──────────────────────
+FROM ghcr.io/vyges-tools/vyges-klayout:latest  AS klayout    # headless Qt-free KLayout
+FROM ghcr.io/vyges-tools/vyges-openroad:latest AS openroad   # OpenROAD (+ OpenSTA vendored)
+FROM ghcr.io/vyges-tools/vyges-ngspice:latest  AS ngspice    # OSDI-enabled ngspice
+FROM ghcr.io/vyges-tools/vyges-yosys:latest    AS yosys      # yosys + yosys-abc + OpenSTA
+
+# ── the composed image ───────────────────────────────────────────────────────
+FROM ubuntu:${UBUNTU_VERSION}
+
+# Runtime libs the composed/apt tools link (headless — no X server/desktop/Qt-GUI),
+# plus magic + netgen-lvs straight from apt (batch-fine, multi-arch, no OSDI/version need).
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      ca-certificates curl xz-utils gawk m4 tcsh \
+      libreadline8 libfftw3-double3 libgomp1 \
+      tcl8.6 tk8.6 libffi8 zlib1g libstdc++6 \
+      python3 libpython3.12t64 libexpat1 libpng16-16t64 libfreetype6 \
+      libx11-6 libxaw7 libxt6 libxft2 libxpm4 \
+      magic netgen-lvs \
+ && rm -rf /var/lib/apt/lists/*
+
+# The from-source Vyges bundles (buildx COPYs the right arch per platform).
+COPY --from=klayout  /opt/vyges-klayout  /opt/vyges/tools/klayout
+COPY --from=openroad /opt/vyges-openroad /opt/vyges/tools/openroad
+COPY --from=ngspice  /opt/vyges-ngspice  /opt/vyges/tools/ngspice
+COPY --from=yosys    /opt/vyges-yosys    /opt/vyges/tools/yosys
+
+# PATH + per-tool env (klayout is a python module -> PYTHONPATH).
+ENV PATH=/opt/vyges/tools/yosys/bin:/opt/vyges/tools/openroad/bin:/opt/vyges/tools/ngspice/bin:/opt/vyges/tools/klayout/bin:$PATH \
+    LD_LIBRARY_PATH=/opt/vyges/tools/ngspice/lib:/opt/vyges/tools/openroad/lib \
+    SPICE_LIB_DIR=/opt/vyges/tools/ngspice/share/ngspice \
+    PYTHONPATH=/opt/vyges/tools/klayout/pymod \
+    CAD_ROOT=/usr/lib/magic \
+    PDK_ROOT=/root/.vyges/pdk-store
+
+# ── Vyges CLI + Loom sign-off engines (multi-arch installer) ─────────────────
+ARG VYGES_CLI_VERSION=0.1.15
+RUN curl -fsSL "https://github.com/vyges-tools/cli/releases/download/v${VYGES_CLI_VERSION}/vyges-installer.sh" | sh \
+ && "${HOME}/.vyges/bin/vyges" install loom
+ENV PATH=/root/.vyges/bin:$PATH
+
+# ── PDKs via the managed pdk-store: refresh catalog, add (register), fetch (materialize) ──
+RUN vyges pdk-store refresh \
+ && for P in ihp_sg13cmos5l ihp_sg13g2 sky130a gf180mcud; do \
+      vyges pdk-store add   "$P" && \
+      vyges pdk-store fetch "$P" || echo "WARN: pdk $P add/fetch failed (verify catalog name)"; \
+    done
+
+# ── aggregate tool descriptor for Loom MCP (lists every composed tool) ───────
+COPY vyges-tool.json /opt/vyges/vyges-tool.json
+
+# ── smoke: one probe per flow (digital synth+timing, P&R, sim, layout, LVS, Loom) ──
+RUN set -eux; \
+    yosys --version | head -1; \
+    sta -version </dev/null 2>/dev/null || command -v sta; \
+    openroad -version | head -1; \
+    ngspice --version | grep -i ngspice | head -1; \
+    magic --version 2>/dev/null || true; \
+    python3 -c 'import klayout.db as db; print("klayout", db.__version__)'; \
+    vyges-lvs --version | head -1
+
+LABEL org.opencontainers.image.title="vybox-eda" \
+      org.opencontainers.image.description="Single light multi-arch EDA container (digital+analog+mixed-signal): Vyges tool bundles + magic/netgen + Vyges CLI/Loom + PDKs." \
+      com.vyges.tool="vybox-eda" \
+      com.vyges.tool.kind="composition" \
+      com.vyges.tool.descriptor="/opt/vyges/vyges-tool.json"

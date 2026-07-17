@@ -1,0 +1,33 @@
+{
+  "schema": "vyges-tool-descriptor/1.1",
+  "tool": "vybox-eda",
+  "kind": "composition",
+  "headless": true,
+  "description": "Single light multi-arch EDA container: digital + analog + mixed-signal. Vyges tool bundles + apt magic/netgen + Vyges CLI/Loom + PDKs.",
+  "flows": ["digital-rtl2gds", "analog-signoff", "mixed-signal"],
+  "tools": [
+    { "name": "yosys",     "kind": "synthesis",       "invoke": "yosys",     "source": "vyges-yosys",    "provides": ["rtl-synthesis", "read-verilog", "read-liberty", "write-json"] },
+    { "name": "yosys-abc", "kind": "tech-mapper",     "invoke": "yosys-abc", "source": "vyges-yosys",    "provides": ["logic-optimization", "technology-mapping"] },
+    { "name": "sta",       "kind": "static-timing",   "invoke": "sta",       "source": "vyges-yosys",    "provides": ["static-timing-analysis", "read-spef", "read-sdc"] },
+    { "name": "openroad",  "kind": "rtl2gds",         "invoke": "openroad",  "source": "vyges-openroad", "provides": ["floorplan", "place", "cts", "route", "opensta"] },
+    { "name": "ngspice",   "kind": "spice-sim",       "invoke": "ngspice",   "source": "vyges-ngspice",  "provides": ["spice-sim", "transient", "dc", "ac", "osdi-models"] },
+    { "name": "klayout",   "kind": "layout-db",       "invoke": "python3 -m klayout.db", "source": "vyges-klayout", "provides": ["gds-io", "oasis-io", "lefdef-io", "drc-oracle", "lvs-oracle"] },
+    { "name": "magic",     "kind": "layout",          "invoke": "magic -dnull -noconsole", "source": "apt", "provides": ["layout", "drc", "pex", "gds-io"] },
+    { "name": "netgen",    "kind": "lvs",             "invoke": "netgen",    "source": "apt",            "provides": ["lvs"] }
+  ],
+  "loom": {
+    "front_door": "vyges",
+    "mcp": "vyges mcp",
+    "engines": ["vyges-loom", "vyges-drc", "vyges-lvs", "vyges-extract", "vyges-char", "vyges-sta-si", "vyges-em-ir", "vyges-power", "vyges-layout"],
+    "install": "vyges install loom"
+  },
+  "pdks": {
+    "manager": "vyges pdk-store",
+    "installed": ["ihp_sg13cmos5l", "ihp_sg13g2", "sky130a", "gf180mcud"],
+    "root": "$PDK_ROOT"
+  },
+  "arch": {
+    "digital": ["linux/amd64", "linux/arm64"],
+    "analog_note": "arm64 SPICE needs arm64-recompiled OSDI models (PDK ships x86_64); digital flow is fully arm64"
+  }
+}
