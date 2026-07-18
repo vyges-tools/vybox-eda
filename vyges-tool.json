@@ -23,7 +23,7 @@
   },
   "pdks": {
     "manager": "vyges pdk-store",
-    "installed": ["ihp_sg13cmos5l", "ihp_sg13g2", "sky130a", "gf180mcud"],
+    "installed": ["ihp_sg13cmos5l", "ihp_sg13g2", "sky130a", "gf180mcu"],
     "root": "$PDK_ROOT"
   },
   "arch": {

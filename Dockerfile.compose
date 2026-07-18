@@ -55,7 +55,7 @@ ENV PATH=/root/.vyges/bin:$PATH
 
 # ── PDKs via the managed pdk-store: refresh catalog, add (register), fetch (materialize) ──
 RUN vyges pdk-store refresh \
- && for P in ihp_sg13cmos5l ihp_sg13g2 sky130a gf180mcud; do \
+ && for P in ihp_sg13cmos5l ihp_sg13g2 sky130a gf180mcu; do \
       vyges pdk-store add   "$P" && \
       vyges pdk-store fetch "$P" || echo "WARN: pdk $P add/fetch failed (verify catalog name)"; \
     done
