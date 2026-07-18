@@ -14,10 +14,17 @@
 ARG UBUNTU_VERSION=24.04
 
 # ── Vyges multi-arch tool bundles (from-source distros) ──────────────────────
-FROM ghcr.io/vyges-tools/vyges-klayout:latest  AS klayout    # headless Qt-free KLayout
-FROM ghcr.io/vyges-tools/vyges-openroad:latest AS openroad   # OpenROAD (+ OpenSTA vendored)
-FROM ghcr.io/vyges-tools/vyges-ngspice:latest  AS ngspice    # OSDI-enabled ngspice
-FROM ghcr.io/vyges-tools/vyges-yosys:latest    AS yosys      # yosys + yosys-abc + OpenSTA
+# klayout = headless Qt-free KLayout · openroad = OpenROAD (+OpenSTA) · ngspice =
+# OSDI-enabled ngspice · yosys = yosys + yosys-abc + OpenSTA
+FROM ghcr.io/vyges-tools/vyges-klayout:latest  AS klayout
+FROM ghcr.io/vyges-tools/vyges-openroad:latest AS openroad
+FROM ghcr.io/vyges-tools/vyges-ngspice:latest  AS ngspice
+FROM ghcr.io/vyges-tools/vyges-yosys:latest    AS yosys
+
+# Complete, FLAT, OSDI-built IHP sg13g2 (all 4 OSDI + Xyce plugins). The ihp-open-pdk
+# monorepo git-clone is SOURCE-only (nested + no compiled OSDI), so we take the ciel-built
+# flat PDK from the IIC-OSIC-TOOLS image. x86_64 (OSDI is arch-specific) — amd64 build.
+FROM ghcr.io/vyges-tools/vyges-iic-osic-tools:iic-latest-loom0.1.14 AS ihppdk
 
 # ── the composed image ───────────────────────────────────────────────────────
 FROM ubuntu:${UBUNTU_VERSION}
@@ -25,7 +32,7 @@ FROM ubuntu:${UBUNTU_VERSION}
 # Runtime libs the composed/apt tools link (headless — no X server/desktop/Qt-GUI),
 # plus magic + netgen-lvs straight from apt (batch-fine, multi-arch, no OSDI/version need).
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      ca-certificates curl xz-utils gawk m4 tcsh \
+      ca-certificates curl git xz-utils gawk m4 tcsh \
       libreadline8 libfftw3-double3 libgomp1 \
       tcl8.6 tk8.6 libffi8 zlib1g libstdc++6 \
       python3 libpython3.12t64 libexpat1 libpng16-16t64 libfreetype6 \
@@ -39,13 +46,21 @@ COPY --from=openroad /opt/vyges-openroad /opt/vyges/tools/openroad
 COPY --from=ngspice  /opt/vyges-ngspice  /opt/vyges/tools/ngspice
 COPY --from=yosys    /opt/vyges-yosys    /opt/vyges/tools/yosys
 
+# ngspice code models: the bundle's spinit hardcodes the build prefix, so repoint it at the
+# bundle's real location — otherwise the *.cm code models fail to load at runtime.
+RUN sed -i 's#/tmp/ngspice-install#/opt/vyges/tools/ngspice#g' \
+      /opt/vyges/tools/ngspice/share/ngspice/scripts/spinit
+
 # PATH + per-tool env (klayout is a python module -> PYTHONPATH).
 ENV PATH=/opt/vyges/tools/yosys/bin:/opt/vyges/tools/openroad/bin:/opt/vyges/tools/ngspice/bin:/opt/vyges/tools/klayout/bin:$PATH \
     LD_LIBRARY_PATH=/opt/vyges/tools/ngspice/lib:/opt/vyges/tools/openroad/lib \
     SPICE_LIB_DIR=/opt/vyges/tools/ngspice/share/ngspice \
     PYTHONPATH=/opt/vyges/tools/klayout/pymod \
     CAD_ROOT=/usr/lib/magic \
-    PDK_ROOT=/root/.vyges/pdk-store
+    PDK_ROOT=/opt/vyges/pdks \
+    IHP_PDK_ROOT=/opt/vyges/pdks \
+    PDK=ihp-sg13cmos5l \
+    SPICE_USERINIT_DIR=/opt/vyges/pdks/ihp-sg13cmos5l/libs.tech/ngspice
 
 # ── Vyges CLI + Loom sign-off engines (multi-arch installer) ─────────────────
 ARG VYGES_CLI_VERSION=0.1.16
@@ -53,14 +68,23 @@ RUN curl -fsSL "https://github.com/vyges-tools/cli/releases/download/v${VYGES_CL
  && "${HOME}/.vyges/bin/vyges" install loom
 ENV PATH=/root/.vyges/bin:$PATH
 
-# ── PDKs via the managed pdk-store: refresh catalog, add (register), fetch (materialize) ──
-# ihp_sg13cmos5l is a thin overlay that `depends_on` ihp_sg13g2 (CLI >=0.1.16 fetches the
-# base as a sibling first so its symlinks resolve) — listing it fetches sg13g2 too.
+# ── PDKs via the managed pdk-store ───────────────────────────────────────────
+# All four PDKs are REGISTERED (add) so `vyges pdk-store` + Loom can resolve them.
+# The IHP contest target is BUNDLED: ihp_sg13g2 is the complete flat PDK dropped in from
+# the IIC image (so fetch sees it "already present"), and ihp_sg13cmos5l is a thin overlay
+# that `depends_on` ihp_sg13g2 (CLI >=0.1.16) — with the base present as a sibling under
+# $IHP_PDK_ROOT, its ~270 symlinks resolve. sky130a/gf180mcu stay register-only to keep the
+# image light (their built open_pdks trees are multi-GB) — materialize on demand at runtime:
+#   vyges pdk-store fetch sky130a   (or gf180mcu)
+COPY --from=ihppdk /foss/pdks/ihp-sg13g2 /opt/vyges/pdks/ihp-sg13g2
 RUN vyges pdk-store refresh \
- && for P in ihp_sg13cmos5l ihp_sg13g2 sky130a gf180mcu; do \
-      vyges pdk-store add   "$P" && \
-      vyges pdk-store fetch "$P" || echo "WARN: pdk $P add/fetch failed (verify catalog name)"; \
-    done
+ && for P in ihp_sg13g2 ihp_sg13cmos5l sky130a gf180mcu; do \
+      vyges pdk-store add "$P" || echo "WARN: pdk-store add $P failed"; \
+    done \
+ && vyges pdk-store fetch ihp_sg13cmos5l \
+ && echo "== dangling symlinks in cmos5l overlay (expect 0) ==" \
+ && ( cd /opt/vyges/pdks/ihp-sg13cmos5l \
+      && echo "dangling=$(find . -type l ! -path './.git/*' -exec test ! -e {} ';' -print | wc -l)" )
 
 # ── aggregate tool descriptor for Loom MCP (lists every composed tool) ───────
 COPY vyges-tool.json /opt/vyges/vyges-tool.json
@@ -74,6 +98,13 @@ RUN set -eux; \
     magic --version 2>/dev/null || true; \
     python3 -c 'import klayout.db as db; print("klayout", db.__version__)'; \
     vyges-lvs --version | head -1
+
+# ── analog smoke: a real IHP cmos5l device op (proves ngspice code models + PDK OSDI load) ──
+RUN set -eux; \
+    printf '.title vybox analog smoke\n.lib %s/libs.tech/ngspice/models/cornerMOSlv.lib mos_tt\nVd d 0 1.2\nVg g 0 1.2\nXM1 d g 0 0 sg13_lv_nmos w=5u l=0.13u ng=1 m=1\n.control\nop\nprint i(Vd)\n.endc\n.end\n' "$PDK_ROOT/$PDK" > /tmp/smoke.spice; \
+    ngspice -b /tmp/smoke.spice 2>&1 | tee /tmp/smoke.out; \
+    grep -qi 'unknown model' /tmp/smoke.out && { echo 'FAIL: PDK OSDI not loaded'; exit 1; } || true; \
+    grep -qE 'i\(vd\) =' /tmp/smoke.out || { echo 'FAIL: no device current'; exit 1; }
 
 LABEL org.opencontainers.image.title="vybox-eda" \
       org.opencontainers.image.description="Single light multi-arch EDA container (digital+analog+mixed-signal): Vyges tool bundles + magic/netgen + Vyges CLI/Loom + PDKs." \

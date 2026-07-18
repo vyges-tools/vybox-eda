@@ -23,8 +23,10 @@
   },
   "pdks": {
     "manager": "vyges pdk-store",
-    "installed": ["ihp_sg13cmos5l", "ihp_sg13g2", "sky130a", "gf180mcu"],
-    "root": "$PDK_ROOT"
+    "bundled": ["ihp_sg13g2", "ihp_sg13cmos5l"],
+    "registered_on_demand": ["sky130a", "gf180mcu"],
+    "root": "$PDK_ROOT",
+    "note": "ihp_sg13cmos5l is a thin overlay on ihp_sg13g2 (depends_on); sky130a/gf180mcu register-only, `vyges pdk-store fetch <pdk>` at runtime"
   },
   "arch": {
     "digital": ["linux/amd64", "linux/arm64"],
