@@ -48,12 +48,14 @@ ENV PATH=/opt/vyges/tools/yosys/bin:/opt/vyges/tools/openroad/bin:/opt/vyges/too
     PDK_ROOT=/root/.vyges/pdk-store
 
 # ── Vyges CLI + Loom sign-off engines (multi-arch installer) ─────────────────
-ARG VYGES_CLI_VERSION=0.1.15
+ARG VYGES_CLI_VERSION=0.1.16
 RUN curl -fsSL "https://github.com/vyges-tools/cli/releases/download/v${VYGES_CLI_VERSION}/vyges-installer.sh" | sh \
  && "${HOME}/.vyges/bin/vyges" install loom
 ENV PATH=/root/.vyges/bin:$PATH
 
 # ── PDKs via the managed pdk-store: refresh catalog, add (register), fetch (materialize) ──
+# ihp_sg13cmos5l is a thin overlay that `depends_on` ihp_sg13g2 (CLI >=0.1.16 fetches the
+# base as a sibling first so its symlinks resolve) — listing it fetches sg13g2 too.
 RUN vyges pdk-store refresh \
  && for P in ihp_sg13cmos5l ihp_sg13g2 sky130a gf180mcu; do \
       vyges pdk-store add   "$P" && \
