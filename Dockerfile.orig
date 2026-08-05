@@ -22,7 +22,10 @@ ARG UBUNTU_VERSION=24.04
 # against it, so do not install a different interpreter.
 ARG PYTHON_VERSION=3.12
 # The EDA tool set. Pin to a real DATED tag — never "latest".
-ARG IIC_OSIC_TOOLS_TAG=2026.05
+# 2026.07: upstream reworked the build — image ~23 GB -> ~15 GB, download <4 GB, Podman now
+# supported on a par with Docker, VACASK gains PSS, GF180MCU/SKY130 KLayout pcells track current
+# gdsfactory. NOT yet rebuilt/validated here — see NOTICE and the lite doc before relying on it.
+ARG IIC_OSIC_TOOLS_TAG=2026.07
 ARG RUST_VERSION=1.83
 # superset (full) only
 ARG KICAD_VERSION=8.0

@@ -12,7 +12,9 @@
 #
 # Upstream: https://github.com/iic-jku/IIC-OSIC-TOOLS (see NOTICE).
 
-iic_osic_tools_tag: ">=2025.01"     # Ubuntu 24.04 base
+iic_osic_tools_tag: "2026.07"       # Ubuntu 24.04 base. EXACT, not a floor: a range here
+                                    # disagreed with the Dockerfile ARG, which is the real pin —
+                                    # two files, two notions of the same thing. Keep them equal.
 python: "3.12"                      # Ubuntu 24.04 system python3. COPYd KLayout/
                                     # OpenROAD modules are cpython-3.12 ABI and pip
                                     # tools install against it; do not install
