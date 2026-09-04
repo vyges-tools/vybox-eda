@@ -237,8 +237,17 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
       curl ca-certificates xz-utils \
  && rm -rf /var/lib/apt/lists/*
+#: The PHYSICAL engines — floorplan through detailed placement. ⛔ **They are NOT in the `loom`
+#: suite.** Measured 2026-09-04: `vyges install loom` installs 21 binaries (ant, cdc, char, drc,
+#: em-ir, extract, lvs, power, sta-si, thermal, the ECO planners …) and NONE of these eight. Each
+#: ships its own `vyges-tools/<tool>` release at the same version, so they install individually.
+#: ⚠️ Drop this and the image quietly has no floorplanner.
+ARG VYGES_PHYSICAL_CRATES="ifp mpl pad pdn ppl tap dpl fin"
 RUN curl -fsSL "https://github.com/vyges-tools/cli/releases/download/v${VYGES_CLI_VERSION}/vyges-installer.sh" | sh \
- && "${HOME}/.vyges/bin/vyges" install loom
+ && "${HOME}/.vyges/bin/vyges" install loom \
+ && for T in ${VYGES_PHYSICAL_CRATES}; do \
+      "${HOME}/.vyges/bin/vyges" install "$T"; \
+    done
 # ⛔ **Assert what `install loom` actually delivered rather than trusting that it did.** The suite
 # arrives in ONE call, so a partial or failed fetch otherwise yields an image that looks built and
 # has no engines in it. These are the PHYSICAL crates — the floorplan-to-detailed-placement chain
