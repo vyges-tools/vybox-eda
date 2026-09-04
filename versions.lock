@@ -22,7 +22,13 @@ NETGEN_REF=1.5.319
 NGSPICE_VERSION=46
 OPEN_PDKS_REF=7b70722e33c03fcb5dabcf4d479fb0822d9251c9
 
-# Vyges binaries build toolchain
+# Vyges CLI — the RELEASED installer version; `vyges install loom` then pulls the
+# whole engine suite (38 binaries) pinned to that same release train.
+# ⚠️ Bump this with intent: it decides which Loom engines the image carries.
+VYGES_CLI_VERSION=0.1.36
+
+# Vyges binaries build toolchain (unused while the binaries come from releases;
+# kept for a from-source stage should one return).
 RUST_VERSION=1.83
 
 # Board / mechanical CAD (full target only)

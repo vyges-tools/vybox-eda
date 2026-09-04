@@ -27,10 +27,25 @@ echo "Pins: ${BUILD_ARGS[*]}"
 ENGINE="${CONTAINER_ENGINE:-docker}"
 [ "$ENGINE" = "docker" ] && export DOCKER_BUILDKIT=1
 
+# OCI provenance labels. These three cannot live in the Dockerfile as constants —
+# they go stale the moment anyone rebuilds — so they are filled here, from git and
+# the clock, and a dirty tree is reported as such rather than passed off as the commit.
+VCS_REF="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
+if [ -n "$(git status --porcelain 2>/dev/null)" ]; then
+  VCS_REF="${VCS_REF}-dirty"
+fi
+BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+IMAGE_VERSION="${IMAGE_VERSION:-$(git describe --tags --always --dirty 2>/dev/null || echo dev)}"
+
+echo "Labels: version=${IMAGE_VERSION} revision=${VCS_REF} created=${BUILD_DATE}"
+
 "${ENGINE}" build \
   --target "${TARGET}" \
   --tag "${TAG}" \
   "${BUILD_ARGS[@]}" \
+  --build-arg "VCS_REF=${VCS_REF}" \
+  --build-arg "BUILD_DATE=${BUILD_DATE}" \
+  --build-arg "IMAGE_VERSION=${IMAGE_VERSION}" \
   --platform linux/amd64 \
   .
 

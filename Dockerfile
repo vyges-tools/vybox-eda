@@ -31,6 +31,8 @@ ARG NETGEN_REF=1.5.319
 ARG NGSPICE_VERSION=46
 ARG OPEN_PDKS_REF=7b70722e33c03fcb5dabcf4d479fb0822d9251c9
 ARG RUST_VERSION=1.83
+# Vyges CLI release the image installs; `vyges install loom` pulls the engine suite.
+ARG VYGES_CLI_VERSION=0.1.36
 # superset (full) only
 ARG KICAD_VERSION=8.0
 ARG FREECAD_VERSION=1.0
@@ -214,22 +216,38 @@ RUN grep -q Tcl_Size /usr/include/tcl/tcl.h \
  && make -j"$(nproc)" && make install \
  && rm -rf /tmp/openroad
 
-# ── Vyges binaries (Rust) — CLI suite + EDA engines (same Ubuntu = glibc match) ─
-# Source from the build context (./src/...); skip for rtl2gds-base.
+# ── Vyges CLI + Loom engines — the RELEASED binaries, not a source build ──────
+#
+# ⛔ **This stage used to ship NOTHING.** It ran `mkdir -p /out/bin` with the source COPY and the
+# cargo build left commented out, so `rtl2gds` copied an EMPTY directory while the file header
+# advertised *"rtl2gds-base + the Vyges CLI and EDA engines"*. An image that claims tools it does
+# not carry is worse than one that never claimed them.
+#
+# 🔑 The installer fetches the PREBUILT `vyges-<tool>` from each public `vyges-tools/<tool>`
+# release, so this needs no Rust toolchain and no build context — and the image carries exactly
+# what a user gets from `vyges install`, which is the thing we actually support.
 FROM ubuntu:${UBUNTU_VERSION} AS vyges-bins
 USER root
-ARG RUST_VERSION
+ARG VYGES_CLI_VERSION
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      build-essential curl ca-certificates pkg-config libssl-dev git \
- && rm -rf /var/lib/apt/lists/* \
- && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
-      | sh -s -- -y --default-toolchain "${RUST_VERSION}" --profile minimal
-ENV PATH=/root/.cargo/bin:${PATH}
-WORKDIR /src
-RUN mkdir -p /out/bin
-# COPY ./src ./        # <- uncomment once the build context carries the sources
-# VALIDATE: cargo build --release each crate; cp binaries into /out/bin.
+      curl ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+RUN curl -fsSL "https://github.com/vyges-tools/cli/releases/download/v${VYGES_CLI_VERSION}/vyges-installer.sh" | sh \
+ && "${HOME}/.vyges/bin/vyges" install loom
+# ⛔ **Assert what `install loom` actually delivered rather than trusting that it did.** The suite
+# arrives in ONE call, so a partial or failed fetch otherwise yields an image that looks built and
+# has no engines in it. These are the PHYSICAL crates — the floorplan-to-detailed-placement chain
+# plus the sign-off engines a flow calls — and the build stops here if any is missing.
+RUN set -eux; \
+    export PATH="${HOME}/.vyges/bin:${PATH}"; \
+    for T in ifp mpl pad pdn ppl tap dpl fin drc lvs extract em-ir thermal opendb sta-si; do \
+      "vyges-$T" --version > /dev/null \
+        || { echo "MISSING physical engine: vyges-$T"; exit 1; }; \
+    done; \
+    mkdir -p /out/bin; \
+    cp -a "${HOME}"/.vyges/bin/. /out/bin/; \
+    echo "vyges binaries staged: $(ls /out/bin | grep -c '^vyges')"
 
 # ============================================================================
 # runtime-base — slim, headless Ubuntu with only the runtime shared libs the
@@ -317,10 +335,40 @@ CMD ["vybox-eda-smoke"]
 # rtl2gds — the published image: EDA toolchain + Vyges CLI + EDA engines.
 # ============================================================================
 FROM rtl2gds-base AS rtl2gds
+ARG UBUNTU_VERSION
 COPY --from=vyges-bins /out/bin /opt/vyges/bin
+# ⚠️ `PATH` already carries /opt/vyges/bin from runtime-base; the engines land there.
+ARG VYGES_CLI_VERSION
+ARG IMAGE_VERSION=dev
+ARG VCS_REF=unknown
+ARG BUILD_DATE=unknown
+ARG OPENROAD_REF
+# 🔑 **`created`, `revision` and `version` have to be BUILD ARGS.** They are the three labels that
+# cannot be written as constants without going stale the first time anyone rebuilds, and they are
+# the ones a consumer actually uses to tell two images apart. `scripts/build.sh` fills them from
+# git and the clock.
 LABEL org.opencontainers.image.title="vybox-eda" \
+      org.opencontainers.image.description="Vyges EDA container: RTL-to-GDS open toolchain (Yosys, Verilator, OpenROAD, KLayout, Magic, Netgen, ngspice) with open PDKs and the Vyges CLI and Loom sign-off engines" \
       org.opencontainers.image.source="https://github.com/vyges-tools/vybox-eda" \
-      org.opencontainers.image.licenses="Apache-2.0"
+      org.opencontainers.image.licenses="Apache-2.0" \
+      org.opencontainers.image.vendor="Vyges" \
+      org.opencontainers.image.version="${IMAGE_VERSION}" \
+      org.opencontainers.image.revision="${VCS_REF}" \
+      org.opencontainers.image.created="${BUILD_DATE}" \
+      org.opencontainers.image.base.name="ubuntu:${UBUNTU_VERSION}" \
+      com.vyges.cli.version="${VYGES_CLI_VERSION}" \
+      com.vyges.openroad.ref="${OPENROAD_REF}"
+
+# ⛔ **Prove the engines survived the COPY.** The stage that stages them asserts they installed;
+# this asserts they are on PATH in the image a user actually runs, which is a different claim and
+# is the one that was silently false while this stage copied an empty directory.
+RUN set -eux; \
+    vyges --version | head -1; \
+    for T in ifp mpl pad pdn ppl tap dpl fin drc lvs extract em-ir thermal opendb sta-si; do \
+      "vyges-$T" --version > /dev/null \
+        || { echo "MISSING physical engine in image: vyges-$T"; exit 1; }; \
+    done; \
+    echo "vyges engines on PATH: $(ls /opt/vyges/bin | grep -c '^vyges')"
 
 # ============================================================================
 # full — rtl2gds plus board / mechanical CAD (headless).
