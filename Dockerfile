@@ -117,7 +117,12 @@ RUN git clone https://github.com/RTimothyEdwards/netgen.git /tmp/netgen \
 FROM build-deps AS ngspice
 ARG NGSPICE_VERSION
 ARG EDA_PREFIX
-RUN curl -fsSL "https://downloads.sourceforge.net/project/ngspice/ng-spice-rework/${NGSPICE_VERSION}/ngspice-${NGSPICE_VERSION}.tar.gz" -o /tmp/ngspice.tgz \
+# ⚠️ **SourceForge MOVES a release into `old-releases/` when a newer one lands**, and the old URL
+# then 404s rather than redirecting. Measured 2026-09-04: every version from 43 to 46 returned 404
+# at the top-level path while 46 answered from `old-releases/`. So try the current location first
+# and fall back — which stays correct in both directions as the pin moves.
+RUN { curl -fsSL "https://downloads.sourceforge.net/project/ngspice/ng-spice-rework/${NGSPICE_VERSION}/ngspice-${NGSPICE_VERSION}.tar.gz" -o /tmp/ngspice.tgz \
+   || curl -fsSL "https://downloads.sourceforge.net/project/ngspice/ng-spice-rework/old-releases/${NGSPICE_VERSION}/ngspice-${NGSPICE_VERSION}.tar.gz" -o /tmp/ngspice.tgz; } \
  && tar -xzf /tmp/ngspice.tgz -C /tmp \
  && cd "/tmp/ngspice-${NGSPICE_VERSION}" \
  && ./configure --prefix="${EDA_PREFIX}" --disable-debug --with-readline=yes --enable-openmp \
