@@ -60,9 +60,16 @@ jobs:
       - name: Load version pins
         id: pins
         run: |
+          # ⚠️ The three provenance labels are NOT in versions.lock and cannot be: they
+          # describe THIS run. scripts/build.sh fills them from git and the clock for a
+          # local build; CI has to do the same, or every published image is labelled
+          # version=dev revision=unknown and two of them cannot be told apart.
           {
             echo 'args<<EOF'
             grep -vE '^\s*(#|$)' versions.lock
+            echo "VCS_REF=${GITHUB_SHA::7}"
+            echo "BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "IMAGE_VERSION=${{ inputs.version != '' && inputs.version || 'dev' }}"
             echo 'EOF'
           } >> "$GITHUB_OUTPUT"
 

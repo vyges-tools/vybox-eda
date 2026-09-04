@@ -24,7 +24,9 @@ ARG PYTHON_VERSION=3.12
 # EDA tools (see tools.yml; versions tracked vs the matrix internally).
 ARG YOSYS_REF=v0.65
 ARG VERILATOR_REF=v5.048
-ARG OPENROAD_REF=08f67ee5ecd14db5a42be8c610bbfd1ccf079299
+# ⚠️ Keep in step with versions.lock — build.sh and CI both override this from there,
+# so a stale default only bites a bare `docker build`, silently and with the wrong tool.
+ARG OPENROAD_REF=7d490b8ecd357199c0c0e9f3e32becd5eb507c34
 ARG KLAYOUT_VERSION=0.30.8
 ARG MAGIC_REF=8.3.642
 ARG NETGEN_REF=1.5.319
