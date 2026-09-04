@@ -230,8 +230,12 @@ FROM ubuntu:${UBUNTU_VERSION} AS vyges-bins
 USER root
 ARG VYGES_CLI_VERSION
 ENV DEBIAN_FRONTEND=noninteractive
+# ⚠️ `xz-utils` is NOT optional: the installer fetches a `.tar.xz`, and a minimal Ubuntu carries
+# `tar` without the `xz` binary it shells out to. Measured 2026-09-04 — the build died with
+# *"tar (child): xz: Cannot exec: No such file or directory"*, three layers before anything used
+# the CLI.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      curl ca-certificates \
+      curl ca-certificates xz-utils \
  && rm -rf /var/lib/apt/lists/*
 RUN curl -fsSL "https://github.com/vyges-tools/cli/releases/download/v${VYGES_CLI_VERSION}/vyges-installer.sh" | sh \
  && "${HOME}/.vyges/bin/vyges" install loom
