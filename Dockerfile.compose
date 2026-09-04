@@ -17,13 +17,21 @@ ARG UBUNTU_VERSION=24.04
 # klayout = headless Qt-free KLayout · openroad = OpenROAD (+OpenSTA) · ngspice =
 # OSDI-enabled ngspice · yosys = yosys + yosys-abc + OpenSTA
 FROM ghcr.io/vyges-tools/vyges-klayout:latest  AS klayout
-FROM ghcr.io/vyges-tools/vyges-openroad:latest AS openroad
+# ⚠️ PINNED, not `latest`: 2026.09.0 is OpenROAD `7d490b8`, the pin every Loom engine is
+# correlated against. An image built from `latest` scores against a reference nobody measured.
+FROM ghcr.io/vyges-tools/vyges-openroad:2026.09.0 AS openroad
 FROM ghcr.io/vyges-tools/vyges-ngspice:latest  AS ngspice
 FROM ghcr.io/vyges-tools/vyges-yosys:latest    AS yosys
 
 # Complete, FLAT, OSDI-built IHP sg13g2 (all 4 OSDI + Xyce plugins). The ihp-open-pdk
 # monorepo git-clone is SOURCE-only (nested + no compiled OSDI), so we take the ciel-built
 # flat PDK from the IIC-OSIC-TOOLS image. x86_64 (OSDI is arch-specific) — amd64 build.
+# ⛔ **This image is LOCAL to the build host and was never pushed to ghcr.** Verified 2026-09-04:
+# `docker manifest inspect` on it returns NOT FOUND while all four Vyges bundles above resolve, yet
+# `docker images` on the EDA box lists it at 18.6 GB. So this file builds only where that image
+# already sits in the local daemon — which is how the last compose build succeeded and why nothing
+# noticed. ⚠️ Do not "fix" it by swapping in `hpretl/iic-osic-tools` on a hunch: this stage is the
+# provenance of the flat OSDI-built sg13g2 PDK, and the substitution needs verifying, not assuming.
 FROM ghcr.io/vyges-tools/vyges-iic-osic-tools:iic-latest-loom0.1.14 AS ihppdk
 
 # ── the composed image ───────────────────────────────────────────────────────
@@ -63,10 +71,23 @@ ENV PATH=/opt/vyges/tools/yosys/bin:/opt/vyges/tools/openroad/bin:/opt/vyges/too
     SPICE_USERINIT_DIR=/opt/vyges/pdks/ihp-sg13cmos5l/libs.tech/ngspice
 
 # ── Vyges CLI + Loom sign-off engines (multi-arch installer) ─────────────────
-ARG VYGES_CLI_VERSION=0.1.16
+# ⚠️ Bump this and the `depends_on` note below TOGETHER — they drifted from 0.1.16 to 0.1.36
+# unnoticed because nothing here asserts the installed version.
+ARG VYGES_CLI_VERSION=0.1.36
 RUN curl -fsSL "https://github.com/vyges-tools/cli/releases/download/v${VYGES_CLI_VERSION}/vyges-installer.sh" | sh \
  && "${HOME}/.vyges/bin/vyges" install loom
 ENV PATH=/root/.vyges/bin:$PATH
+
+# ⛔ **Assert what `install loom` actually delivered, rather than trusting that it did.**
+# `vyges install loom` pulls the whole suite in one call, so a partial or failed fetch leaves an
+# image that looks built and is missing engines. These are the PHYSICAL crates — the floorplan-to-
+# detailed-placement chain plus the sign-off engines the flow calls — and the build fails here if
+# any one of them is absent or cannot report its version.
+RUN set -eux; \
+    for T in ifp mpl pad pdn ppl tap dpl fin drc lvs extract em-ir thermal opendb sta-si; do \
+      "vyges-$T" --version > /dev/null || { echo "MISSING physical engine: vyges-$T"; exit 1; }; \
+    done; \
+    echo "physical engines present: $(ls /root/.vyges/bin | grep -c '^vyges-') binaries"
 
 # ── PDKs via the managed pdk-store ───────────────────────────────────────────
 # All four PDKs are REGISTERED (add) so `vyges pdk-store` + Loom can resolve them.
