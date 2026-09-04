@@ -4,6 +4,9 @@
 # on Ubuntu 24.04; the EDA tool versions below match the iic-osic-tools 2026.05
 # co-tested set (the matrix reference — see tools.yml) but are built from their
 # own pinned upstreams here. Bump one entry per commit.
+#
+# ⚠️ OPENROAD_REF is the EXCEPTION to the co-tested set: it tracks the commit the
+# Vyges engines are correlated against, not the iic matrix. See its note below.
 
 UBUNTU_VERSION=24.04
 PYTHON_VERSION=3.12
@@ -11,7 +14,14 @@ PYTHON_VERSION=3.12
 # EDA tools — iic-osic-tools 2026.05-aligned pins (verified git tags / commits)
 YOSYS_REF=v0.65
 VERILATOR_REF=v5.048
-OPENROAD_REF=08f67ee5ecd14db5a42be8c610bbfd1ccf079299
+# OpenROAD is pinned to the SAME commit the Vyges engines are built and correlated
+# against, so the container's OpenROAD and the engines shipped beside it agree.
+# ⚠️ Move this WITH that pin, never on its own: an image whose OpenROAD and engines
+# come from different commits reports differences that belong to neither.
+# 7d490b8 = 2026-09-03. Previously 08f67ee5 (2026-05-12), which had drifted 3281
+# commits behind. Dependency set is unchanged across the move: OR-Tools 9.14,
+# CUDD 3.0.0, LEMON 1.3.1.
+OPENROAD_REF=7d490b8ecd357199c0c0e9f3e32becd5eb507c34
 # OpenROAD's prebuilt deps (it builds none itself) — iic-aligned pins.
 ORTOOLS_VERSION=9.14
 CUDD_VERSION=3.0.0

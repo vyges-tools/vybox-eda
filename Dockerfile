@@ -354,6 +354,7 @@ CMD ["vybox-eda-smoke"]
 # ============================================================================
 FROM rtl2gds-base AS rtl2gds
 ARG UBUNTU_VERSION
+ARG OPENROAD_REF
 COPY --from=vyges-bins /out/bin /opt/vyges/bin
 # ⚠️ `PATH` already carries /opt/vyges/bin from runtime-base; the engines land there.
 ARG VYGES_CLI_VERSION
@@ -386,7 +387,17 @@ RUN set -eux; \
       "vyges-$T" --version > /dev/null \
         || { echo "MISSING physical engine in image: vyges-$T"; exit 1; }; \
     done; \
-    echo "vyges engines on PATH: $(ls /opt/vyges/bin | grep -c '^vyges')"
+    echo "vyges engines on PATH: $(ls /opt/vyges/bin | grep -c '^vyges')"; \
+    # ⛔ **Prove the OpenROAD in the image IS the pin.** `openroad -version` embeds the short
+    # commit as `...-g<sha>`, so this fails the build if the binary came from a cached layer at
+    # some other ref. The whole point of pinning it to the engines' commit is lost if the two can
+    # drift silently, and a stale layer is exactly how that happens.
+    ORV="$(openroad -version 2>/dev/null | head -1)"; \
+    SHORT="$(echo "${OPENROAD_REF}" | cut -c1-9)"; \
+    case "$ORV" in \
+      *"g${SHORT}"*) echo "openroad at pin ${SHORT}: $ORV" ;; \
+      *) echo "OPENROAD MISMATCH: built '$ORV', expected g${SHORT} from OPENROAD_REF"; exit 1 ;; \
+    esac
 
 # ============================================================================
 # full — rtl2gds plus board / mechanical CAD (headless).
