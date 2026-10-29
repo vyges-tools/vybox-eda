@@ -40,7 +40,7 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-${{ vars.VYGES_UBUNTU_VERSION || '24.04' }}
     timeout-minutes: 350          # from-scratch build (OpenROAD source) is the long pole
     steps:
       - uses: actions/checkout@v7
